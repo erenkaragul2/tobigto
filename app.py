@@ -47,7 +47,28 @@ def index():
 @app.route('/templates')
 def templates():
     return render_template('index.html')
-
+@app.route('/get_distance_matrix', methods=['GET'])
+def get_distance_matrix():
+    if 'problem_data' not in session:
+        return jsonify({'success': False, 'error': 'No problem data available'})
+    
+    problem_data = session['problem_data']
+    
+    # Get company names if available
+    company_names = problem_data.get('company_names')
+    node_labels = None
+    
+    # If we have company names, use them as node labels
+    if company_names:
+        node_labels = company_names
+    
+    return jsonify({
+        'success': True,
+        'matrix': problem_data['distance_matrix'],
+        'nodes': len(problem_data['distance_matrix']),
+        'node_labels': node_labels,
+        'distance_type': problem_data.get('distance_type', 'Euclidean')
+    })
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
