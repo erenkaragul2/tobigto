@@ -29,7 +29,10 @@ document.addEventListener('DOMContentLoaded', function() {
         randomDepotInput: document.getElementById('randomDepotInput'),
         randomCapacityInput: document.getElementById('randomCapacityInput'),
         dataPreviewContainer: document.getElementById('dataPreviewContainer'),
-        
+        matrixPreviewContainer: document.getElementById('matrixPreviewContainer'),
+        toggleMatrixBtn: document.getElementById('toggleMatrixBtn'),
+        fullMatrixContainer: document.getElementById('fullMatrixContainer'),
+        distanceMatrixTable: document.getElementById('distanceMatrixTable'),
         // Configuration
         depotInput: document.getElementById('depotInput'),
         capacityInput: document.getElementById('capacityInput'),
@@ -54,12 +57,169 @@ document.addEventListener('DOMContentLoaded', function() {
         convergencePlotContainer: document.getElementById('convergencePlotContainer'),
         routeDetailsContainer: document.getElementById('routeDetailsContainer')
     };
+    ui.toggleMatrixBtn = document.getElementById('toggleMatrixBtn');
+    ui.matrixPreviewContainer = document.getElementById('matrixPreviewContainer');
+    ui.fullMatrixContainer = document.getElementById('fullMatrixContainer');
+    ui.distanceMatrixTable = document.getElementById('distanceMatrixTable');
+    if (ui.toggleMatrixBtn) {
+        ui.toggleMatrixBtn.addEventListener('click', toggleDistanceMatrix);
+    }
 
     // Attach event listeners
     ui.uploadBtn.addEventListener('click', uploadFile);
     ui.generateRandomBtn.addEventListener('click', generateRandomProblem);
     ui.processDataBtn.addEventListener('click', processData);
     ui.solveBtn.addEventListener('click', solveProblem);
+    // Function to toggle between matrix preview and full matrix
+    function toggleDistanceMatrix() {
+        const isShowingFull = ui.fullMatrixContainer.style.display !== 'none';
+        
+        if (isShowingFull) {
+            // Switch to preview
+            ui.fullMatrixContainer.style.display = 'none';
+            ui.matrixPreviewContainer.style.display = 'block';
+            ui.toggleMatrixBtn.innerHTML = '<i class="fas fa-eye me-1"></i>Show Full Matrix';
+        } else {
+            // Switch to full matrix
+            if (ui.distanceMatrixTable.rows.length <= 1) {
+                // If matrix not yet loaded, fetch it
+                fetchFullDistanceMatrix();
+            }
+            ui.matrixPreviewContainer.style.display = 'none';
+            ui.fullMatrixContainer.style.display = 'block';
+            ui.toggleMatrixBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i>Show Preview';
+        }
+    }
+        // Function to toggle between matrix preview and full matrix
+    function toggleDistanceMatrix() {
+        const isShowingFull = ui.fullMatrixContainer.style.display !== 'none';
+        
+        if (isShowingFull) {
+            // Switch to preview
+            ui.fullMatrixContainer.style.display = 'none';
+            ui.matrixPreviewContainer.style.display = 'block';
+            ui.toggleMatrixBtn.innerHTML = '<i class="fas fa-eye me-1"></i>Show Full Matrix';
+        } else {
+            // Switch to full matrix
+            if (ui.distanceMatrixTable.rows.length <= 1) {
+                // If matrix not yet loaded, fetch it
+                fetchFullDistanceMatrix();
+            }
+            ui.matrixPreviewContainer.style.display = 'none';
+            ui.fullMatrixContainer.style.display = 'block';
+            ui.toggleMatrixBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i>Show Preview';
+        }
+    }
+    // Function to display the full distance matrix
+    function displayFullDistanceMatrix(matrix, nodeLabels, distanceType) {
+        // Reset the container and add back the table
+        ui.fullMatrixContainer.innerHTML = '';
+        const table = document.createElement('table');
+        table.id = 'distanceMatrixTable';
+        table.className = 'table table-sm table-bordered table-striped table-hover';
+        ui.fullMatrixContainer.appendChild(table);
+        
+        // Add table header with distance type info
+        const thead = document.createElement('thead');
+        table.appendChild(thead);
+        
+        // Add title row with distance type
+        const titleRow = document.createElement('tr');
+        const titleCell = document.createElement('th');
+        titleCell.colSpan = matrix.length + 1;
+        titleCell.className = 'text-center bg-light';
+        titleCell.textContent = `Distance Matrix (${distanceType})`;
+        titleRow.appendChild(titleCell);
+        thead.appendChild(titleRow);
+        
+        // Add column headers
+        const headerRow = document.createElement('tr');
+        const cornerCell = document.createElement('th');
+        cornerCell.className = 'bg-light';
+        cornerCell.textContent = 'From \\ To';
+        headerRow.appendChild(cornerCell);
+        
+        nodeLabels.forEach((label, i) => {
+            const th = document.createElement('th');
+            th.className = 'bg-light';
+            th.textContent = label;
+            th.title = label;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        
+        // Add table body with matrix values
+        const tbody = document.createElement('tbody');
+        table.appendChild(tbody);
+        
+        matrix.forEach((row, i) => {
+            const tr = document.createElement('tr');
+            
+            // Add row header
+            const th = document.createElement('th');
+            th.className = 'bg-light';
+            th.textContent = nodeLabels[i];
+            th.title = nodeLabels[i];
+            tr.appendChild(th);
+            
+            // Add row values
+            row.forEach((value, j) => {
+                const td = document.createElement('td');
+                
+                // Format the value based on magnitude
+                if (value === 0) {
+                    td.textContent = '-';
+                    td.className = 'table-secondary';
+                } else if (value < 1000) {
+                    td.textContent = value.toFixed(1);
+                } else {
+                    // For large distances show km
+                    td.textContent = (value / 1000).toFixed(2) + ' km';
+                }
+                
+                // Highlight diagonal cells
+                if (i === j) {
+                    td.className = 'table-secondary';
+                }
+                
+                tr.appendChild(td);
+            });
+            
+            tbody.appendChild(tr);
+        });
+        
+        // Add download button
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+        downloadBtn.innerHTML = '<i class="fas fa-download me-1"></i>Download as CSV';
+        downloadBtn.addEventListener('click', () => downloadMatrixAsCSV(matrix, nodeLabels));
+        ui.fullMatrixContainer.appendChild(downloadBtn);
+    }
+    // Function to download the matrix as a CSV file
+    function downloadMatrixAsCSV(matrix, labels) {
+        // Create CSV content
+        let csvContent = "data:text/csv;charset=utf-8,";
+        
+        // Add header row
+        csvContent += "," + labels.join(",") + "\n";
+        
+        // Add data rows
+        matrix.forEach((row, i) => {
+            csvContent += labels[i] + "," + row.join(",") + "\n";
+        });
+        
+        // Create download link
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "distance_matrix.csv");
+        document.body.appendChild(link);
+        
+        // Trigger download and clean up
+        link.click();
+        document.body.removeChild(link);
+    }
+
 
     // Initialize tabs
     const tabTriggers = document.querySelectorAll('[data-bs-toggle="tab"]');
@@ -246,6 +406,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update UI state
                 updateUIState();
                 
+                // Show toggle button
+                ui.toggleMatrixBtn.style.display = 'block';
+                
                 // Automatically switch to solve tab
                 ui.dataTabs.solve.click();
                 
@@ -255,11 +418,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 showAlert(ui.solveInfoAlert, data.error, 'danger');
             }
         })
-        .catch(error => {
-            ui.processDataBtn.disabled = false;
-            ui.processDataBtn.innerHTML = '<i class="fas fa-sync me-2"></i>Process Data with These Settings';
-            showAlert(ui.solveInfoAlert, 'Error processing data: ' + error, 'danger');
-        });
     }
 
     // Function to solve the problem
@@ -571,29 +729,129 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to show distance matrix preview
     function showDistanceMatrixPreview(data) {
-        // Show in solve tab info alert
-        ui.solveInfoAlert.innerHTML = `
-            <div class="mb-3">
-                <h6>Problem Overview:</h6>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Nodes <span class="badge bg-primary rounded-pill">${data.nodes}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Depot <span class="badge bg-primary rounded-pill">${ui.depotInput.value}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Vehicle Capacity <span class="badge bg-primary rounded-pill">${ui.capacityInput.value}</span>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Distance Calculation <span class="badge bg-primary rounded-pill">${data.distance_type || 'Euclidean'}</span>
-                    </li>
-                </ul>
-            </div>
-            <div class="alert alert-success">
-                Data processed successfully. You can now solve the problem.
-            </div>
-        `;
+        // Get container references
+        const matrixPreviewContainer = document.getElementById('matrixPreviewContainer');
+        const toggleMatrixBtn = document.getElementById('toggleMatrixBtn');
+        const fullMatrixContainer = document.getElementById('fullMatrixContainer');
+        const distanceMatrixTable = document.getElementById('distanceMatrixTable');
+        
+        // Clear previous content
+        matrixPreviewContainer.innerHTML = '';
+        
+        // Show matrix preview
+        if (data.distanceMatrixPreview) {
+            const tableContainer = document.createElement('div');
+            tableContainer.classList.add('table-responsive');
+            
+            const table = document.createElement('table');
+            table.classList.add('table', 'table-sm', 'table-bordered', 'data-table');
+            
+            // Create table header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            headerRow.innerHTML = '<th>Node</th>' + 
+                Array.from({length: Math.min(5, data.nodes)}, (_, i) => `<th>Node ${i}</th>`).join('');
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            // Create table body
+            const tbody = document.createElement('tbody');
+            data.distanceMatrixPreview.forEach((row, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td><strong>Node ${i}</strong></td>` + 
+                    row.map(val => `<td>${val}</td>`).join('');
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            
+            tableContainer.appendChild(table);
+            matrixPreviewContainer.appendChild(tableContainer);
+            
+            // Show "view full matrix" button if we have more than 5 nodes
+            if (data.nodes > 5) {
+                toggleMatrixBtn.style.display = 'block';
+                toggleMatrixBtn.onclick = function() {
+                    if (fullMatrixContainer.style.display === 'none') {
+                        // Show full matrix
+                        fullMatrixContainer.style.display = 'block';
+                        toggleMatrixBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i>Hide Full Matrix';
+                        
+                        // If table is empty, populate it
+                        if (distanceMatrixTable.rows.length <= 1) {
+                            // Request full matrix data
+                            fetch('/get_distance_matrix')
+                                .then(response => response.json())
+                                .then(matrixData => {
+                                    if (matrixData.success) {
+                                        populateFullMatrix(matrixData.matrix, matrixData.nodes);
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error fetching full matrix:', error);
+                                });
+                        }
+                    } else {
+                        // Hide full matrix
+                        fullMatrixContainer.style.display = 'none';
+                        toggleMatrixBtn.innerHTML = '<i class="fas fa-eye me-1"></i>Show Full Matrix';
+                    }
+                };
+            } else {
+                toggleMatrixBtn.style.display = 'none';
+            }
+        } else {
+            matrixPreviewContainer.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No distance matrix data available.
+                </div>
+            `;
+            toggleMatrixBtn.style.display = 'none';
+        }
+    }
+
+    // Helper function to populate full matrix table
+    function populateFullMatrix(matrix, numNodes) {
+        const table = document.getElementById('distanceMatrixTable');
+        
+        // Clear existing rows
+        while (table.rows.length > 0) {
+            table.deleteRow(0);
+        }
+        
+        // Create header row
+        const headerRow = table.insertRow();
+        const cornerCell = headerRow.insertCell();
+        cornerCell.innerHTML = '<strong>Node</strong>';
+        cornerCell.style.backgroundColor = '#f8f9fa';
+        
+        // Add column headers
+        for (let i = 0; i < numNodes; i++) {
+            const th = document.createElement('th');
+            th.textContent = `Node ${i}`;
+            headerRow.appendChild(th);
+        }
+        
+        // Add data rows
+        for (let i = 0; i < numNodes; i++) {
+            const row = table.insertRow();
+            
+            // Add row header
+            const rowHeader = row.insertCell();
+            rowHeader.innerHTML = `<strong>Node ${i}</strong>`;
+            rowHeader.style.backgroundColor = '#f8f9fa';
+            
+            // Add distance cells
+            for (let j = 0; j < numNodes; j++) {
+                const cell = row.insertCell();
+                cell.textContent = parseFloat(matrix[i][j]).toFixed(2);
+                
+                // Highlight the diagonal
+                if (i === j) {
+                    cell.style.backgroundColor = '#e9ecef';
+                }
+            }
+        }
     }
 
     // Function to update live updates

@@ -11,6 +11,9 @@ import math
 import copy
 from datetime import datetime
 from werkzeug.utils import secure_filename
+import os
+from dotenv import load_dotenv
+from distance_matrix import compute_google_distance_matrix, compute_euclidean_distance_matrix
 
 # Import the CVRP_SimulatedAnnealing class from app.py
 # Make sure it's accessible here
@@ -162,6 +165,20 @@ def generate_random():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# Update the process_data route in app.py
+@app.route('/get_distance_matrix', methods=['GET'])
+def get_distance_matrix():
+    if 'problem_data' not in session:
+        return jsonify({'success': False, 'error': 'No problem data available'})
+    
+    problem_data = session['problem_data']
+    
+    return jsonify({
+        'success': True,
+        'matrix': problem_data['distance_matrix'],
+        'nodes': len(problem_data['distance_matrix'])
+    })
+    
 @app.route('/process_data', methods=['POST'])
 def process_data():
     if 'data' not in session:
@@ -229,8 +246,43 @@ def process_data():
         
         coordinates = np.array(coords_list)
         
-        # Compute distance matrix (Euclidean for now)
-        distance_matrix = compute_euclidean_distance_matrix(coordinates)
+        # Get distance calculation parameters
+        use_google_maps = params.get('use_google_maps', False)
+        google_maps_options = params.get('google_maps_options', {})
+        
+        # Determine what distance type to display in UI
+        distance_type = "Google Maps" if use_google_maps else "Euclidean"
+        
+        # If using Google Maps, add mode to display
+        if use_google_maps and 'mode' in google_maps_options:
+            distance_type += f" ({google_maps_options['mode'].capitalize()})"
+        
+        # Compute distance matrix
+        if use_google_maps and GOOGLE_MAPS_API_KEY:
+            try:
+                # Get Google Maps specific options
+                mode = google_maps_options.get('mode', 'driving')
+                avoid = google_maps_options.get('avoid', [])
+                
+                # Generate avoid parameter string if provided
+                avoid_param = '|'.join(avoid) if avoid else None
+                
+                # Compute with Google Maps
+                distance_matrix = compute_google_distance_matrix(
+                    coordinates, 
+                    api_key=GOOGLE_MAPS_API_KEY,
+                    batch_size=app.config.get('GOOGLE_MAPS_BATCH_SIZE', 10),
+                    delay=app.config.get('GOOGLE_MAPS_DELAY', 1.0),
+                    mode=mode
+                )
+            except Exception as e:
+                # Log error and fall back to Euclidean
+                print(f"Error using Google Maps API: {str(e)}")
+                distance_matrix = compute_euclidean_distance_matrix(coordinates)
+                distance_type = "Euclidean (Google Maps failed)"
+        else:
+            # Use Euclidean distance
+            distance_matrix = compute_euclidean_distance_matrix(coordinates)
         
         # Store in session for later use
         session['problem_data'] = {
@@ -239,13 +291,15 @@ def process_data():
             'demands': demands,
             'company_names': company_names,
             'depot': int(params.get('depot', 0)),
-            'vehicle_capacity': int(params.get('vehicle_capacity', 20))
+            'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
+            'distance_type': distance_type
         }
         
         return jsonify({
             'success': True,
             'message': 'Data processed successfully',
             'nodes': len(coordinates),
+            'distance_type': distance_type,
             'distanceMatrixPreview': [
                 [f"{val:.2f}" for val in row[:5]] 
                 for row in distance_matrix[:5]
@@ -253,6 +307,8 @@ def process_data():
         })
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/solve', methods=['POST'])

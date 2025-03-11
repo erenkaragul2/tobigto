@@ -80,3 +80,84 @@
     stroke-width: 6px;
     cursor: pointer;
 }
+
+/* Add these styles to your CSS file */
+
+/* Distance matrix table styles */
+#distanceMatrixTable {
+    font-size: 0.8rem;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#distanceMatrixTable th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #f8f9fa;
+}
+
+#distanceMatrixTable th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+}
+
+#distanceMatrixTable thead tr:first-child th {
+    top: 0;
+    z-index: 30;
+}
+
+#distanceMatrixTable th:first-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+#distanceMatrixTable td {
+    text-align: right;
+    min-width: 70px;
+}
+
+/* Custom tooltip for long node names */
+.matrix-cell-tooltip {
+    position: relative;
+    cursor: pointer;
+}
+
+.matrix-cell-tooltip:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 100;
+    font-size: 0.75rem;
+}
+
+/* Matrix loading indicator */
+.matrix-loading {
+    padding: 2rem;
+    text-align: center;
+    font-size: 1.2rem;
+    color: #6c757d;
+}
+
+/* Matrix highlight effect */
+#distanceMatrixTable tr:hover {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+#distanceMatrixTable tr:hover td {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+#distanceMatrixTable td:hover {
+    background-color: rgba(0, 123, 255, 0.2) !important;
+}
