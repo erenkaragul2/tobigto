@@ -20,6 +20,9 @@ function displaySolutionOverview(solution) {
     // Solution details
     const details = solution.details;
     
+    // Convert total distance from meters to kilometers
+    const totalDistanceKm = (details.total_distance / 1000).toFixed(2);
+    
     // Create solution overview card
     const overviewCard = document.createElement('div');
     overviewCard.classList.add('row');
@@ -32,7 +35,7 @@ function displaySolutionOverview(solution) {
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             Total Distance 
-                            <span class="badge bg-primary rounded-pill">${details.total_distance.toFixed(2)}</span>
+                            <span class="badge bg-primary rounded-pill">${totalDistanceKm} km</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             Number of Routes 
@@ -70,7 +73,7 @@ function displaySolutionOverview(solution) {
                                         </td>
                                         <td>${route.stops.length - 2}</td>
                                         <td>${route.load}/${route.capacity}</td>
-                                        <td>${route.distance.toFixed(2)}</td>
+                                        <td>${(route.distance / 1000).toFixed(2)} km</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -110,13 +113,16 @@ function displayRouteDetails(solution) {
         const loadProgressColor = loadPercentage > 90 ? 'danger' : 
                                  loadPercentage > 75 ? 'warning' : 'success';
         
+        // Convert route distance from meters to kilometers
+        const routeDistanceKm = (route.distance / 1000).toFixed(2);
+        
         routeCard.innerHTML = `
             <div class="card route-card route-${route.id}">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="card-title mb-0">
                         <span class="badge" style="background-color: ${routeColor}">Route ${route.id}</span>
                     </h6>
-                    <span class="text-muted small">Distance: ${route.distance.toFixed(2)}</span>
+                    <span class="text-muted small">Distance: ${routeDistanceKm} km</span>
                 </div>
                 <div class="card-body">
                     <div class="mb-2">

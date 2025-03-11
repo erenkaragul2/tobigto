@@ -903,7 +903,15 @@ document.addEventListener('DOMContentLoaded', function() {
             data.distanceMatrixPreview.forEach((row, i) => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td><strong>Node ${i}</strong></td>` + 
-                    row.map(val => `<td>${val}</td>`).join('');
+                    row.map(val => {
+                        // Convert values to kilometers
+                        const numVal = parseFloat(val);
+                        if (isNaN(numVal) || numVal === 0) {
+                            return `<td>${val}</td>`;
+                        } else {
+                            return `<td>${(numVal / 1000).toFixed(2)} km</td>`;
+                        }
+                    }).join('');
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
@@ -951,6 +959,57 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `;
             toggleMatrixBtn.style.display = 'none';
+        }
+    }
+    
+    // Helper function to populate full matrix table
+    function populateFullMatrix(matrix, numNodes) {
+        const table = document.getElementById('distanceMatrixTable');
+        
+        // Clear existing rows
+        while (table.rows.length > 0) {
+            table.deleteRow(0);
+        }
+        
+        // Create header row
+        const headerRow = table.insertRow();
+        const cornerCell = headerRow.insertCell();
+        cornerCell.innerHTML = '<strong>Node</strong>';
+        cornerCell.style.backgroundColor = '#f8f9fa';
+        
+        // Add column headers
+        for (let i = 0; i < numNodes; i++) {
+            const th = document.createElement('th');
+            th.textContent = `Node ${i}`;
+            headerRow.appendChild(th);
+        }
+        
+        // Add data rows
+        for (let i = 0; i < numNodes; i++) {
+            const row = table.insertRow();
+            
+            // Add row header
+            const rowHeader = row.insertCell();
+            rowHeader.innerHTML = `<strong>Node ${i}</strong>`;
+            rowHeader.style.backgroundColor = '#f8f9fa';
+            
+            // Add distance cells
+            for (let j = 0; j < numNodes; j++) {
+                const cell = row.insertCell();
+                const distance = parseFloat(matrix[i][j]);
+                
+                // Convert to kilometers and format
+                if (distance === 0) {
+                    cell.textContent = '-';
+                } else {
+                    cell.textContent = (distance / 1000).toFixed(2) + ' km';
+                }
+                
+                // Highlight the diagonal
+                if (i === j) {
+                    cell.style.backgroundColor = '#e9ecef';
+                }
+            }
         }
     }
 
@@ -1045,6 +1104,103 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Update solve tab info
         updateSolveTab();
+    }
+    function showConvergencePlot(costHistory, tempHistory) {
+        const convergencePlotContainer = document.getElementById('convergencePlotContainer');
+        
+        // Clear previous content and create canvas
+        convergencePlotContainer.innerHTML = '<canvas id="convergenceChart"></canvas>';
+        
+        // Create chart
+        const ctx = document.getElementById('convergenceChart').getContext('2d');
+        
+        // Prepare data
+        const iterations = Array.from({length: costHistory.length}, (_, i) => i);
+        
+        // Convert cost values from meters to kilometers for display
+        const costHistoryKm = costHistory.map(cost => cost / 1000);
+        
+        // Create chart
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: iterations,
+                datasets: [
+                    {
+                        label: 'Best Cost (km)',
+                        data: costHistoryKm,
+                        borderColor: '#36a2eb',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Temperature',
+                        data: tempHistory,
+                        borderColor: '#ff6384',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Convergence of Simulated Annealing'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                if (context.datasetIndex === 0) {
+                                    return `Best Cost: ${context.raw.toFixed(2)} km`;
+                                } else {
+                                    return `Temperature: ${context.raw.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Iteration'
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Best Cost (km)'
+                        }
+                    },
+                    y1: {
+                        type: 'logarithmic',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Temperature'
+                        },
+                        grid: {
+                            drawOnChartArea: false
+                        }
+                    }
+                }
+            }
+        });
     }
 
     // Function to update solve tab
