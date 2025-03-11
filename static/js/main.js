@@ -894,7 +894,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
             headerRow.innerHTML = '<th>Node</th>' + 
-                Array.from({length: Math.min(5, data.nodes)}, (_, i) => `<th>Node ${i}</th>`).join('');
+                Array.from({length: data.nodes}, (_, i) => `<th>Node ${i}</th>`).join('');
             thead.appendChild(headerRow);
             table.appendChild(thead);
             

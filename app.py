@@ -129,7 +129,7 @@ def upload_file():
             'success': True, 
             'message': f'File {file.filename} uploaded successfully',
             'columns': data_df.columns.tolist(),
-            'previewData': data_df.head(5).to_dict(orient='records')
+            'previewData': data_df.to_dict(orient='records')
         })
         
     except Exception as e:
@@ -181,8 +181,8 @@ def generate_random():
             'demands': demands,
             'company_names': company_names,
             'distanceMatrixPreview': [
-                [f"{val:.2f}" for val in row[:5]] 
-                for row in distance_matrix[:5]
+            [f"{val:.2f}" for val in row] 
+            for row in distance_matrix
             ]
         })
     
@@ -190,19 +190,7 @@ def generate_random():
         return jsonify({'success': False, 'error': str(e)})
 
 # Update the process_data route in app.py
-@app.route('/get_distance_matrix', methods=['GET'])
-def get_distance_matrix():
-    if 'problem_data' not in session:
-        return jsonify({'success': False, 'error': 'No problem data available'})
-    
-    problem_data = session['problem_data']
-    
-    return jsonify({
-        'success': True,
-        'matrix': problem_data['distance_matrix'],
-        'nodes': len(problem_data['distance_matrix'])
-    })
-    
+
 @app.route('/process_data', methods=['POST'])
 def process_data():
     if 'data' not in session:
