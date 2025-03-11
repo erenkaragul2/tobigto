@@ -1,0 +1,82 @@
+/* Custom styles for CVRP Solver */
+
+/* Data table */
+.data-table {
+    font-size: 0.9rem;
+    width: 100%;
+}
+
+.data-table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    text-align: center;
+}
+
+.data-table td {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Live updates container */
+.live-updates-container {
+    height: 300px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+}
+
+.update-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.update-entry:last-child {
+    border-bottom: none;
+}
+
+/* Route card */
+.route-card {
+    height: 100%;
+}
+
+/* Map markers */
+.depot-marker {
+    background-color: red;
+}
+
+.customer-marker {
+    background-color: blue;
+}
+
+.route-label {
+    background-color: white;
+    border: 2px solid;
+    border-radius: 50%;
+}
+
+/* Better button spacing */
+.btn {
+    margin-right: 0.5rem;
+}
+
+/* Fix for Leaflet map */
+.leaflet-container {
+    z-index: 1;
+}
+
+/* Highlight route on hover */
+.route-path:hover {
+    stroke-width: 6px;
+    cursor: pointer;
+}

@@ -339,7 +339,7 @@ def run_solver(job_id, problem_data, params):
     try:
         # Update job status
         solver_jobs[job_id]['status'] = 'running'
-        solver_jobs[job_id]['message'] = 'Solving problem...'
+        solver_jobs[job_id]['message'] = 'Initializing solver...'
         
         # Extract data
         distance_matrix = np.array(problem_data['distance_matrix'])
@@ -348,86 +348,56 @@ def run_solver(job_id, problem_data, params):
         vehicle_capacity = problem_data['vehicle_capacity']
         company_names = problem_data.get('company_names', None)
         
-        # For demo purposes, let's create a dummy solution
-        # In a real scenario, you'd use the actual CVRP_SimulatedAnnealing solver
+        # Extract algorithm parameters
+        initial_temperature = float(params.get('initial_temperature', 1000.0))
+        final_temperature = float(params.get('final_temperature', 1.0))
+        cooling_rate = float(params.get('cooling_rate', 0.98))
+        max_iterations = int(params.get('max_iterations', 1000))
+        iterations_per_temp = int(params.get('iterations_per_temp', 100))
         
-        # Simulate algorithm progress
-        total_iterations = 50
-        for i in range(1, total_iterations + 1):
-            progress = int((i / total_iterations) * 100)
-            cost = 1000 - i * 10 + random.randint(-20, 20)
-            
+        # Create the CVRP_SimulatedAnnealing solver
+        from models.cvrp import CVRP_SimulatedAnnealing
+        solver = CVRP_SimulatedAnnealing(
+            distance_matrix=distance_matrix,
+            demands=demands,
+            depot=depot,
+            vehicle_capacity=vehicle_capacity,
+            initial_temperature=initial_temperature,
+            final_temperature=final_temperature,
+            cooling_rate=cooling_rate,
+            max_iterations=max_iterations,
+            iterations_per_temp=iterations_per_temp
+        )
+        
+        # Define callback function for progress updates
+        def update_progress(iteration, inner_iter, temperature, best_cost, progress):
             # Update progress
             solver_jobs[job_id]['progress'] = progress
-            solver_jobs[job_id]['message'] = f"Iteration {i}, Best Cost: {cost:.2f}"
+            solver_jobs[job_id]['message'] = f"Iteration {iteration}, Best Cost: {best_cost:.2f}"
             
             # Add to updates
             solver_jobs[job_id]['updates'].append({
-                'iteration': i,
-                'temperature': 1000 * (0.95 ** i),
-                'best_cost': cost,
+                'iteration': iteration,
+                'temperature': temperature,
+                'best_cost': best_cost,
                 'progress': progress,
                 'time': datetime.now().strftime("%H:%M:%S")
             })
-            
-            # Sleep to simulate computation time
-            time.sleep(0.2)
         
-        # Generate a dummy solution
-        num_nodes = len(distance_matrix)
-        routes = generate_dummy_solution(num_nodes, depot, demands, vehicle_capacity)
+        # Run the solver
+        routes, cost, cost_history, temp_history = solver.solve(callback=update_progress)
         
         # Create solution details
-        solution_details = {
-            'total_distance': calculate_total_distance(routes, distance_matrix, depot),
-            'routes': []
-        }
-        
-        # Add route details
-        for i, route in enumerate(routes):
-            route_demand = sum(demands[customer] for customer in route)
-            route_distance = calculate_route_distance(route, distance_matrix, depot)
-            
-            route_with_depot = [depot] + route + [depot]
-            
-            # Use company names if available
-            if company_names:
-                route_display = [
-                    {'index': node, 'name': company_names[node]} 
-                    for node in route_with_depot
-                ]
-            else:
-                route_display = [
-                    {'index': node, 'name': f"Node {node}"} 
-                    for node in route_with_depot
-                ]
-                
-            solution_details['routes'].append({
-                'id': i + 1,
-                'stops': route_display,
-                'load': route_demand,
-                'capacity': vehicle_capacity,
-                'distance': route_distance
-            })
-        
-        # Generate cost history for the convergence plot
-        cost_history = [1000]
-        for i in range(1, total_iterations + 1):
-            cost_history.append(1000 - i * (1000 / total_iterations) * (0.8 + 0.2 * random.random()))
-        
-        # Generate temperature history
-        temp_history = [1000]
-        for i in range(1, total_iterations + 1):
-            temp_history.append(1000 * (0.95 ** i))
+        solution_details = solver.get_solution_details(company_names)
         
         # Store solution
         solver_jobs[job_id]['status'] = 'completed'
         solver_jobs[job_id]['progress'] = 100
-        solver_jobs[job_id]['message'] = f"Solution found with cost: {cost_history[-1]:.2f}"
+        solver_jobs[job_id]['message'] = f"Solution found with cost: {cost:.2f}"
         solver_jobs[job_id]['solution'] = {
             'routes': routes,
             'details': solution_details,
-            'cost': cost_history[-1],
+            'cost': cost,
             'depot': depot,
             'coordinates': problem_data['coordinates']
         }
