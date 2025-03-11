@@ -150,6 +150,56 @@
                                                 <label for="capacityInput" class="form-label">Vehicle Capacity</label>
                                                 <input type="number" class="form-control" id="capacityInput" value="20" min="1">
                                             </div>
+                                            <div class="col-md-12 mt-3">
+                                                <div class="card">
+                                                    <div class="card-header">
+                                                        <h5 class="card-title mb-0">
+                                                            <i class="fas fa-road me-2"></i>Distance Calculation
+                                                        </h5>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="form-check form-check-inline">
+                                                            <input class="form-check-input" type="radio" name="distanceType" id="distanceEuclidean" value="euclidean" checked>
+                                                            <label class="form-check-label" for="distanceEuclidean">
+                                                                Euclidean Distance (straight-line)
+                                                            </label>
+                                                        </div>
+                                                        <div class="form-check form-check-inline">
+                                                            <input class="form-check-input" type="radio" name="distanceType" id="distanceGoogle" value="google">
+                                                            <label class="form-check-label" for="distanceGoogle">
+                                                                Google Maps (real-world travel distance)
+                                                            </label>
+                                                        </div>
+                                                        
+                                                        <div id="googleMapsOptions" class="mt-3" style="display: none;">
+                                                            <div class="alert alert-info">
+                                                                <i class="fas fa-info-circle me-2"></i>
+                                                                Using Google Maps API may incur costs based on your usage. Make sure you have a valid API key configured.
+                                                            </div>
+                                                            <div class="row g-3">
+                                                                <div class="col-md-6">
+                                                                    <label for="travelModeInput" class="form-label">Travel Mode</label>
+                                                                    <select class="form-select" id="travelModeInput">
+                                                                        <option value="driving" selected>Driving</option>
+                                                                        <option value="walking">Walking</option>
+                                                                        <option value="bicycling">Bicycling</option>
+                                                                        <option value="transit">Transit</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <label for="avoidInput" class="form-label">Avoid</label>
+                                                                    <select class="form-select" id="avoidInput" multiple>
+                                                                        <option value="tolls">Tolls</option>
+                                                                        <option value="highways">Highways</option>
+                                                                        <option value="ferries">Ferries</option>
+                                                                        <option value="indoor">Indoor</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                         <button id="processDataBtn" class="btn btn-primary mt-3">
                                             <i class="fas fa-sync me-2"></i>Process Data with These Settings

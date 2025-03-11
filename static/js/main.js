@@ -116,6 +116,17 @@ document.addEventListener('DOMContentLoaded', function() {
             showAlert(ui.dataPreviewContainer, 'Error uploading file: ' + error, 'danger');
         });
     }
+        // Distance calculation type toggle
+    document.querySelectorAll('input[name="distanceType"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const googleMapsOptions = document.getElementById('googleMapsOptions');
+            if (this.value === 'google') {
+                googleMapsOptions.style.display = 'block';
+            } else {
+                googleMapsOptions.style.display = 'none';
+            }
+        });
+    });
 
     // Function to generate a random problem
     function generateRandomProblem() {
@@ -188,14 +199,27 @@ document.addEventListener('DOMContentLoaded', function() {
             showAlert(ui.solveInfoAlert, 'Please upload data first', 'danger');
             return;
         }
-
+    
         const depot = parseInt(ui.depotInput.value) || 0;
         const capacity = parseInt(ui.capacityInput.value) || 20;
-
+        
+        // Get selected distance calculation method
+        const useGoogleMaps = document.getElementById('distanceGoogle').checked;
+        
+        // Get Google Maps specific options if selected
+        let googleMapsOptions = {};
+        if (useGoogleMaps) {
+            googleMapsOptions = {
+                mode: document.getElementById('travelModeInput').value,
+                avoid: Array.from(document.getElementById('avoidInput').selectedOptions)
+                         .map(option => option.value)
+            };
+        }
+    
         // Show loading state
         ui.processDataBtn.disabled = true;
         ui.processDataBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
-
+    
         fetch('/process_data', {
             method: 'POST',
             headers: {
@@ -203,14 +227,16 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 depot: depot,
-                vehicle_capacity: capacity
+                vehicle_capacity: capacity,
+                use_google_maps: useGoogleMaps,
+                google_maps_options: googleMapsOptions
             })
         })
         .then(response => response.json())
         .then(data => {
             ui.processDataBtn.disabled = false;
             ui.processDataBtn.innerHTML = '<i class="fas fa-sync me-2"></i>Process Data with These Settings';
-
+    
             if (data.success) {
                 appState.dataProcessed = true;
                 
@@ -403,27 +429,46 @@ document.addEventListener('DOMContentLoaded', function() {
             // Create table header
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
-            Object.keys(data.previewData[0]).forEach(key => {
+            
+            // Get all possible columns from all rows (in case some rows have different fields)
+            const allColumns = new Set();
+            data.previewData.forEach(row => {
+                Object.keys(row).forEach(key => allColumns.add(key));
+            });
+            
+            // Create table headers for all columns
+            Array.from(allColumns).forEach(key => {
                 const th = document.createElement('th');
                 th.textContent = key;
                 headerRow.appendChild(th);
             });
+            
             thead.appendChild(headerRow);
             table.appendChild(thead);
             
             // Create table body
             const tbody = document.createElement('tbody');
+            
+            // Add all data rows
             data.previewData.forEach(row => {
                 const tr = document.createElement('tr');
-                Object.values(row).forEach(value => {
+                
+                // For each column, either show the data or an empty cell
+                Array.from(allColumns).forEach(key => {
                     const td = document.createElement('td');
-                    td.textContent = value;
+                    // Check if the row has this column
+                    if (row.hasOwnProperty(key)) {
+                        td.textContent = row[key] !== null ? row[key] : '';
+                    } else {
+                        td.textContent = '';
+                    }
                     tr.appendChild(td);
                 });
+                
                 tbody.appendChild(tr);
             });
-            table.appendChild(tbody);
             
+            table.appendChild(tbody);
             tableContainer.appendChild(table);
             ui.dataPreviewContainer.appendChild(tableContainer);
         }
@@ -539,6 +584,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     </li>
                     <li class="list-group-item d-flex justify-content-between align-items-center">
                         Vehicle Capacity <span class="badge bg-primary rounded-pill">${ui.capacityInput.value}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Distance Calculation <span class="badge bg-primary rounded-pill">${data.distance_type || 'Euclidean'}</span>
                     </li>
                 </ul>
             </div>
