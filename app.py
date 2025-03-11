@@ -13,8 +13,11 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
-from distance_matrix import compute_google_distance_matrix, compute_euclidean_distance_matrix
+from models.distance_matrix import compute_google_distance_matrix, compute_euclidean_distance_matrix
 
+
+load_dotenv()
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 # Import the CVRP_SimulatedAnnealing class from app.py
 # Make sure it's accessible here
 
