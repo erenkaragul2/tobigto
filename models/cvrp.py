@@ -6,7 +6,7 @@ from datetime import datetime
 
 class CVRP_SimulatedAnnealing:
     def __init__(self, distance_matrix, demands, depot, vehicle_capacity, 
-                 initial_temperature=1000.0, final_temperature=1.0, 
+                 initial_temperature=1000.0, final_temperature=1.0,max_vehicles=5, 
                  cooling_rate=0.98, max_iterations=1000, iterations_per_temp=100):
         """
         Initialize the CVRP Simulated Annealing solver
@@ -26,6 +26,7 @@ class CVRP_SimulatedAnnealing:
         self.demands = demands
         self.depot = depot
         self.vehicle_capacity = vehicle_capacity
+        self.max_vehicles = max_vehicles
         self.num_nodes = len(distance_matrix)
         
         # SA parameters
@@ -65,11 +66,23 @@ class CVRP_SimulatedAnnealing:
             customer_demand = self.demands[customer]
             
             # If adding this customer exceeds capacity, start a new route
+            # But only if we haven't reached max_vehicles
             if current_load + customer_demand > self.vehicle_capacity:
                 if current_route:  # Only add non-empty routes
                     routes.append(current_route)
-                current_route = [customer]
-                current_load = customer_demand
+                # Only start a new route if we haven't reached max_vehicles
+                if len(routes) < self.max_vehicles - 1:  # Add this check
+                    current_route = [customer]
+                    current_load = customer_demand
+                else:
+                    # Add to the last route even if it exceeds capacity
+                    # (this ensures all customers are served)
+                    if not current_route:  # If the last route is empty, create it
+                        current_route = [customer]
+                        current_load = customer_demand
+                    else:
+                        current_route.append(customer)
+                        current_load += customer_demand
             else:
                 current_route.append(customer)
                 current_load += customer_demand
@@ -77,6 +90,13 @@ class CVRP_SimulatedAnnealing:
         # Add the last route if not empty
         if current_route:
             routes.append(current_route)
+        
+        # Ensure we don't use more than max_vehicles routes
+        while len(routes) > self.max_vehicles:
+            # Merge the two shortest routes
+            routes.sort(key=lambda r: len(r))
+            routes[1].extend(routes[0])
+            routes.pop(0)
         
         self.current_solution = routes
         self.current_cost = self.calculate_total_distance(routes)
@@ -164,7 +184,14 @@ class CVRP_SimulatedAnnealing:
             source_route_indices = [i for i, route in enumerate(neighbor) if len(route) >= 1]
             if not source_route_indices:
                 return neighbor
-            
+            if len(neighbor) >= self.max_vehicles:
+                target_idx = random.randrange(len(neighbor))
+            else:
+                # Allow creating a new route if we're under max_vehicles
+                target_idx = random.randrange(len(neighbor) + 1)
+                if target_idx == len(neighbor):
+                    # Create a new route
+                    neighbor.append([])
             source_idx = random.choice(source_route_indices)
             source_route = neighbor[source_idx]
             
@@ -213,6 +240,23 @@ class CVRP_SimulatedAnnealing:
         
         # Clean up empty routes
         neighbor = [route for route in neighbor if route]
+        if len(neighbor) > self.max_vehicles:
+            # Merge routes until we have max_vehicles
+            while len(neighbor) > self.max_vehicles:
+                # Find two routes with smallest combined load
+                min_load = float('inf')
+                merge_indices = (0, 1)
+                for i in range(len(neighbor)):
+                    for j in range(i+1, len(neighbor)):
+                        combined_load = self.calculate_route_load(neighbor[i]) + self.calculate_route_load(neighbor[j])
+                        if combined_load < min_load:
+                            min_load = combined_load
+                            merge_indices = (i, j)
+                
+                # Merge the selected routes
+                i, j = merge_indices
+                neighbor[i].extend(neighbor[j])
+                neighbor.pop(j)
         
         return neighbor
     
