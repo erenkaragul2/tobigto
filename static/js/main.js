@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Attach event listeners
+    ui.maxVehiclesInput = document.getElementById('maxVehiclesInput');
     ui.uploadBtn.addEventListener('click', uploadFile);
     ui.generateRandomBtn.addEventListener('click', generateRandomProblem);
     ui.processDataBtn.addEventListener('click', processData);
@@ -471,6 +472,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
         const depot = parseInt(ui.depotInput.value) || 0;
         const capacity = parseInt(ui.capacityInput.value) || 20;
+        const maxVehicles = parseInt(ui.maxVehiclesInput.value) || 5; // Add this line
         
         // Get selected distance calculation method
         const useGoogleMaps = document.getElementById('distanceGoogle').checked;
@@ -497,6 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({
                 depot: depot,
                 vehicle_capacity: capacity,
+                max_vehicles: maxVehicles, // Add this line
                 use_google_maps: useGoogleMaps,
                 google_maps_options: googleMapsOptions
             })

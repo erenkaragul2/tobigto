@@ -170,7 +170,9 @@ def generate_random():
             'demands': demands,
             'company_names': company_names,
             'depot': depot,
-            'vehicle_capacity': int(params.get('vehicle_capacity', 20))
+            'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
+            'max_vehicles': int(params.get('max_vehicles', 5)),  # Add this line
+            
         }
         
         return jsonify({
@@ -304,6 +306,7 @@ def process_data():
             'company_names': company_names,
             'depot': int(params.get('depot', 0)),
             'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
+            'max_vehicles': int(params.get('max_vehicles', 5)),  # Add this line
             'distance_type': distance_type
         }
         
@@ -422,6 +425,7 @@ def run_solver(job_id, problem_data, params):
         cooling_rate = float(params.get('cooling_rate', 0.98))
         max_iterations = int(params.get('max_iterations', 1000))
         iterations_per_temp = int(params.get('iterations_per_temp', 100))
+        max_vehicles = problem_data.get('max_vehicles', 5)
         
         # Create the CVRP_SimulatedAnnealing solver
         from models.cvrp import CVRP_SimulatedAnnealing
@@ -433,6 +437,7 @@ def run_solver(job_id, problem_data, params):
             initial_temperature=initial_temperature,
             final_temperature=final_temperature,
             cooling_rate=cooling_rate,
+             max_vehicles=max_vehicles,
             max_iterations=max_iterations,
             iterations_per_temp=iterations_per_temp
         )

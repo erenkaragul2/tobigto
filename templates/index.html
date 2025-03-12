@@ -150,6 +150,11 @@
                                                 <label for="capacityInput" class="form-label">Vehicle Capacity</label>
                                                 <input type="number" class="form-control" id="capacityInput" value="20" min="1">
                                             </div>
+                                            <div class="col-md-6">
+                                                <label for="maxVehiclesInput" class="form-label">Max Vehicles (Routes)</label>
+                                                <input type="number" class="form-control" id="maxVehiclesInput" value="5" min="1">
+                                                <div class="form-text">Maximum number of vehicles (routes) to use</div>
+                                            </div>
                                             <div class="col-md-12 mt-3">
                                                 <div class="card">
                                                     <div class="card-header">
@@ -371,6 +376,7 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{{ url_for('static', filename='js/matrix-fix.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/console-matrix-logger.js') }}"></script>
     
     <!-- Custom scripts -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
