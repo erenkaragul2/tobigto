@@ -453,6 +453,22 @@
                     <div class="tab-pane fade" id="results" role="tabpanel" aria-labelledby="results-tab">
                         <!-- Solution Overview Section -->
                         <div id="solutionContainer" class="mb-4"></div>
+                        <div class="text-center my-4">
+                            <button id="generateReportBtn" class="btn btn-primary btn-lg" onclick="generateDetailedReport()">
+                              <i class="fas fa-file-alt me-2"></i>Generate Route Report with Google Maps Links
+                            </button>
+                          </div>
+                          
+                          <script>
+                            function generateDetailedReport() {
+                              if (window.appState && window.appState.lastSolution) {
+                                // Call the report generation function from route-report-generator.js
+                                createReportWindow(window.appState.lastSolution);
+                              } else {
+                                alert("No solution data available to generate report!");
+                              }
+                            }
+                          </script>
                         
                         <!-- Route Details Section - Now Primary -->
                         <div id="routeDetailsContainer" class="mb-4">
