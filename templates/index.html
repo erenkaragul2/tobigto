@@ -15,6 +15,76 @@
     
     <!-- Additional styles for maps and visualization -->
     <style>
+          /* Enhanced route card styling */
+    .route-card {
+        transition: all 0.3s ease;
+    }
+    
+    .route-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1) !important;
+    }
+    
+    .route-mini-map {
+        border-top: 1px solid #eee;
+        height: 200px;
+        width: 100%;
+    }
+    
+    /* Make route details prominent */
+    #routeDetailsContainer {
+        margin-top: 20px;
+    }
+    
+    /* Move map and convergence to less prominent position */
+    #mapSection, #convergenceSection {
+        margin-top: 30px;
+    }
+    
+    /* Stop sequence visualization */
+    .stop-sequence {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        margin-bottom: 15px;
+        padding: 10px 0;
+    }
+    
+    .stop-item {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 5px;
+        position: relative;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .stop-item::after {
+        content: '';
+        position: absolute;
+        right: -15px;
+        top: 20px;
+        width: 20px;
+        height: 2px;
+        background-color: #ccc;
+    }
+    
+    .stop-item:last-child::after {
+        display: none;
+    }
+    
+    .depot-stop {
+        background-color: #d9534f;
+    }
+    
+    .customer-stop {
+        background-color: #5bc0de;
+    }
         /* Map container styling */
         #mapContainer {
             min-height: 400px;
@@ -381,47 +451,77 @@
 
                     <!-- Results Tab -->
                     <div class="tab-pane fade" id="results" role="tabpanel" aria-labelledby="results-tab">
+                        <!-- Solution Overview Section -->
                         <div id="solutionContainer" class="mb-4"></div>
-
-                        <div class="row">
-                            <div class="col-md-8">
+                        
+                        <!-- Route Details Section - Now Primary -->
+                        <div id="routeDetailsContainer" class="mb-4">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Solve the problem to see detailed route information.
+                            </div>
+                        </div>
+                        
+                        <!-- Map Section - Now Secondary & Collapsible -->
+                        <div class="row" id="mapSection">
+                            <div class="col-md-12">
                                 <div class="card">
                                     <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="fas fa-map-marked-alt me-2"></i>Route Visualization
-                                        </h5>
-                                    </div>
-                                    <div class="card-body p-0">
-                                        <div id="mapContainer">
-                                            <div class="text-center py-5">
-                                                <div class="spinner-border text-primary" role="status">
-                                                    <span class="visually-hidden">Loading...</span>
-                                                </div>
-                                                <p class="mt-2">Initializing map visualization...</p>
-                                            </div>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h5 class="card-title mb-0">
+                                                <i class="fas fa-map-marked-alt me-2"></i>Route Map
+                                            </h5>
+                                            <button class="btn btn-sm btn-outline-secondary" type="button" 
+                                                    data-bs-toggle="collapse" data-bs-target="#mapContainerCollapse" 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="card-title mb-0">
-                                            <i class="fas fa-chart-line me-2"></i>Convergence Plot
-                                        </h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="convergencePlotContainer">
-                                            <div class="text-center py-5">
-                                                <p>Convergence data will appear here after solving.</p>
+                                    <div class="card-body p-0">
+                                        <div class="collapse" id="mapContainerCollapse">
+                                            <div id="mapContainer" style="height: 400px;">
+                                                <div class="text-center py-5">
+                                                    <div class="spinner-border text-primary" role="status">
+                                                        <span class="visually-hidden">Loading...</span>
+                                                    </div>
+                                                    <p class="mt-2">Map visualization will appear here after solving.</p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-
-                        <div id="routeDetailsContainer" class="mt-4"></div>
+                        
+                        <!-- Convergence Plot Section - Now Secondary & Collapsible -->
+                        <div class="row mt-4" id="convergenceSection">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h5 class="card-title mb-0">
+                                                <i class="fas fa-chart-line me-2"></i>Convergence Plot
+                                            </h5>
+                                            <button class="btn btn-sm btn-outline-secondary" type="button" 
+                                                    data-bs-toggle="collapse" data-bs-target="#convergencePlotCollapse" 
+                                                    aria-expanded="false">
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="collapse" id="convergencePlotCollapse">
+                                            <div id="convergencePlotContainer" style="height: 350px;">
+                                                <div class="text-center py-5">
+                                                    <p>Convergence data will appear here after solving.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -442,11 +542,12 @@
     <script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
     <script src="{{ url_for('static', filename='js/matrix-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/console-matrix-logger.js') }}"></script>
-    
+    <script src="{{ url_for('static', filename='js/overview-display.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/enhanced-route-display.js') }}"></script>
     <!-- Our comprehensive fix that addresses both map and convergence plot issues -->
     <script src="{{ url_for('static', filename='js/comprehensive-fix.js') }}"></script>
     <!-- Enhanced Road Routing -->
-    <script src="{{ url_for('static', filename='js/road-routing-fix.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/google-maps-fixed.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/repgen.js') }}"></script>
+
 </body>
 </html>
