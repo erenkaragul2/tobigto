@@ -454,20 +454,26 @@
                         <!-- Solution Overview Section -->
                         <div id="solutionContainer" class="mb-4"></div>
                         <div class="text-center my-4">
-                            <button id="generateReportBtn" class="btn btn-primary btn-lg" onclick="generateDetailedReport()">
+                            <button id="generateReportBtn" class="btn btn-primary btn-lg">
                               <i class="fas fa-file-alt me-2"></i>Generate Route Report with Google Maps Links
                             </button>
                           </div>
                           
+                          <!-- Add this script to properly initialize the button -->
                           <script>
-                            function generateDetailedReport() {
-                              if (window.appState && window.appState.lastSolution) {
-                                // Call the report generation function from route-report-generator.js
-                                createReportWindow(window.appState.lastSolution);
-                              } else {
-                                alert("No solution data available to generate report!");
+                            document.addEventListener('DOMContentLoaded', function() {
+                              // Find the generate report button and add the click handler
+                              const reportBtn = document.getElementById('generateReportBtn');
+                              if (reportBtn) {
+                                reportBtn.addEventListener('click', function() {
+                                  if (typeof window.generateDetailedReport === 'function') {
+                                    window.generateDetailedReport();
+                                  } else {
+                                    alert("Report generation function not available. Please refresh the page and try again.");
+                                  }
+                                });
                               }
-                            }
+                            });
                           </script>
                         
                         <!-- Route Details Section - Now Primary -->
