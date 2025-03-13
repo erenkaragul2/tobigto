@@ -1,8 +1,9 @@
-// Enhanced report generation fix
+// Fix for report generation - save to static/js/report-generation-fix.js
+
 (function() {
-    console.log("Loading enhanced report generation fix...");
+    console.log("Loading report generation fix...");
     
-    // Make sure global appState exists
+    // Ensure we have a global app state
     window.appState = window.appState || {
         dataLoaded: false,
         dataProcessed: false,
@@ -12,64 +13,220 @@
         lastSolution: null
     };
     
-    // Fix for the report generation function
-    window.generateDetailedReport = function() {
-        console.log("Generate detailed report called");
+    // Store original functions we need to enhance
+    const originalDisplaySolutionResults = window.displaySolutionResults;
+    const originalGetSolution = window.getSolution;
+    
+    // Enhanced version of displaySolutionResults to properly save solution
+    window.displaySolutionResults = function(data) {
+        console.log("Enhanced displaySolutionResults called");
         
-        // Check for solution directly in the window.appState
-        if (window.appState && window.appState.lastSolution) {
-            console.log("Solution found in appState, generating report");
+        // Store solution data in global state
+        if (data && data.solution) {
+            window.appState.lastSolution = data.solution;
+            window.appState.solutionReady = true;
+            console.log("Solution data saved to appState");
+        }
+        
+        // Call original function
+        if (typeof originalDisplaySolutionResults === 'function') {
+            originalDisplaySolutionResults(data);
+        }
+    };
+    
+    // Enhanced version of getSolution to track job ID
+    window.getSolution = function() {
+        console.log("Enhanced getSolution called");
+        const jobId = window.appState.jobId;
+        
+        if (!jobId) {
+            console.error("No job ID available");
+            return;
+        }
+        
+        fetch(`/get_solution/${jobId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log("Solution data received");
+                    
+                    // Important: Save solution data to global state
+                    window.appState.lastSolution = data.solution;
+                    window.appState.solutionReady = true;
+                    console.log("Solution saved to global state:", !!window.appState.lastSolution);
+                    
+                    // Call original display function
+                    if (typeof originalDisplaySolutionResults === 'function') {
+                        originalDisplaySolutionResults(data);
+                    } else {
+                        console.warn("Original displaySolutionResults not found");
+                        
+                        // Fallback display
+                        displaySolutionOverview(data.solution);
+                        displayRouteDetails(data.solution);
+                        visualizeSolutionOnMap(data.solution);
+                        if (data.cost_history && data.temp_history) {
+                            showConvergencePlot(data.cost_history, data.temp_history);
+                        }
+                    }
+                    
+                    // Switch to results tab
+                    const resultsTab = document.getElementById('results-tab');
+                    if (resultsTab) {
+                        resultsTab.click();
+                    }
+                } else {
+                    console.error("Error fetching solution:", data.error);
+                    alert(`Error fetching solution: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error("Error in fetch:", error);
+                alert(`Error fetching solution: ${error.message}`);
+            });
+    };
+    
+    // Fix for the generateDetailedReport function
+    window.generateDetailedReport = function() {
+        console.log("Enhanced generateDetailedReport called");
+        
+        // First try to use the solution in appState
+        if (window.appState.lastSolution) {
+            console.log("Using solution from appState");
             generateReportFromSolution(window.appState.lastSolution);
-        } 
-        // If not in appState, try to fetch it again using the stored jobId
-        else if (window.appState && window.appState.jobId) {
-            console.log("Solution not found in appState, attempting to fetch from server");
-            showLoading("Fetching solution data...");
+            return;
+        }
+        
+        // If no solution in appState, try to fetch it
+        if (window.appState.jobId) {
+            console.log("Fetching solution from server");
             
+            // Add loading indicator
+            const body = document.body;
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'reportLoadingIndicator';
+            loadingDiv.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center';
+            loadingDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            loadingDiv.style.zIndex = '9999';
+            
+            loadingDiv.innerHTML = `
+                <div class="bg-white p-3 rounded shadow">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border text-primary me-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <div>
+                            Fetching solution data...
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            body.appendChild(loadingDiv);
+            
+            // Fetch solution
             fetch(`/get_solution/${window.appState.jobId}`)
                 .then(response => response.json())
                 .then(data => {
+                    // Remove loading indicator
+                    body.removeChild(loadingDiv);
+                    
                     if (data.success && data.solution) {
-                        console.log("Solution fetched from server successfully");
+                        console.log("Solution fetched successfully");
                         window.appState.lastSolution = data.solution;
                         window.appState.solutionReady = true;
                         generateReportFromSolution(data.solution);
                     } else {
-                        console.error("Solution fetch failed:", data.error || "Unknown error");
-                        hideLoading();
-                        alert("Could not fetch solution data from server. Please try solving again.");
+                        console.error("Failed to fetch solution:", data.error);
+                        alert("Failed to fetch solution: " + (data.error || "Unknown error"));
                     }
                 })
                 .catch(error => {
+                    // Remove loading indicator
+                    if (document.getElementById('reportLoadingIndicator')) {
+                        body.removeChild(loadingDiv);
+                    }
+                    
                     console.error("Error fetching solution:", error);
-                    hideLoading();
                     alert("Error fetching solution: " + error.message);
                 });
-        } else {
-            console.error("No solution data or job ID available");
-            alert("No solution data available to generate report! Please solve the problem first.");
-        }
-    };
-    
-    // Function to generate the report from a solution
-    function generateReportFromSolution(solution) {
-        console.log("Generating report from solution");
-        
-        // Check if solution has the necessary details
-        if (!solution || !solution.details || !solution.coordinates) {
-            console.error("Invalid solution data:", solution);
-            alert("Invalid solution data. Please try solving again.");
+            
             return;
         }
         
+        // Last resort - try to find solution data rendered in the DOM
+        try {
+            console.log("Trying to extract solution from DOM");
+            const routeCards = document.querySelectorAll('.route-card');
+            
+            if (routeCards.length > 0) {
+                console.log("Found route cards in DOM, checking for solution data");
+                
+                // If DOM contains route information, build a minimal solution object
+                const routeDetails = Array.from(routeCards).map((card, index) => {
+                    const routeId = parseInt(card.querySelector('.card-title')?.textContent?.match(/Route (\d+)/)?.[1] || (index + 1));
+                    return { id: routeId };
+                });
+                
+                if (routeDetails.length > 0) {
+                    alert("Direct report generation not possible. Please solve the problem again to regenerate the solution data.");
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error("Error extracting solution from DOM:", e);
+        }
+        
+        // If all else fails
+        alert("No solution data available to generate report! Please solve the problem first.");
+    };
+    
+    // Intercept the original poll function to capture job ID
+    const originalPollSolverStatus = window.pollSolverStatus;
+    if (typeof originalPollSolverStatus === 'function') {
+        window.pollSolverStatus = function(jobId) {
+            // Save job ID to app state
+            if (jobId) {
+                window.appState.jobId = jobId;
+                console.log("Job ID saved to app state:", jobId);
+            }
+            
+            // Call original function
+            return originalPollSolverStatus.apply(this, arguments);
+        };
+    }
+    
+    // Add direct event listener to report button in case the original one isn't working
+    document.addEventListener('DOMContentLoaded', function() {
+        const reportBtn = document.getElementById('generateReportBtn');
+        if (reportBtn) {
+            reportBtn.addEventListener('click', function() {
+                window.generateDetailedReport();
+            });
+        }
+    });
+    
+    console.log("Report generation fix loaded successfully");
+})();
+
+// Helper function to generate the report from a solution
+// This is a simplified version of the function in repgen.js
+function generateReportFromSolution(solution) {
+    console.log("Generating report from solution");
+    
+    if (!solution || !solution.details || !solution.coordinates) {
+        console.error("Invalid solution data:", solution);
+        alert("Invalid solution data. Please try solving again.");
+        return;
+    }
+    
+    try {
         const reportWindow = window.open('', '_blank');
         
         if (!reportWindow) {
             alert('Please allow pop-ups to view the report');
             return;
         }
-        
-        hideLoading();
         
         const details = solution.details;
         const coordinates = solution.coordinates;
@@ -141,30 +298,11 @@
                     background-color: #5bc0de;
                 }
                 
-                .route-map-container {
-                    height: 300px;
-                    width: 100%;
-                    border: 1px solid #ddd;
-                    margin: 10px 0;
-                }
-                
                 @media print {
-                    .no-print {
-                        display: none !important;
-                    }
-                    
-                    .page-break {
-                        page-break-after: always;
-                    }
-                    
-                    a {
-                        text-decoration: none !important;
-                        color: #000 !important;
-                    }
-                    
-                    .route-card {
-                        break-inside: avoid;
-                    }
+                    .no-print { display: none !important; }
+                    .page-break { page-break-after: always; }
+                    a { text-decoration: none !important; color: #000 !important; }
+                    .route-card { break-inside: avoid; }
                 }
             </style>
         </head>
@@ -228,9 +366,15 @@
                 </div>
         `;
         
+        // Route colors for consistent styling
+        const routeColors = [
+            '#ff6384', '#36a2eb', '#ffce56', '#4bc0c0', '#9966ff',
+            '#ff9f40', '#c9cbcf', '#7cbb00', '#f652a0', '#00bcf2'
+        ];
+        
         // Add details for each route
         details.routes.forEach((route, index) => {
-            const routeColor = getRouteColor(index);
+            const routeColor = routeColors[index % routeColors.length];
             const routeKm = (route.distance / 1000).toFixed(2);
             const loadPercent = ((route.load / route.capacity) * 100).toFixed(0);
             
@@ -380,7 +524,7 @@
             </div>
             
             <script>
-                // Helper functions for the report
+                // Helper function to count total customers
                 function countCustomers(routes) {
                     let total = 0;
                     routes.forEach(route => {
@@ -388,11 +532,6 @@
                     });
                     return total;
                 }
-                
-                // Initialize when the page loads
-                document.addEventListener('DOMContentLoaded', function() {
-                    console.log("Report loaded successfully");
-                });
             </script>
         </body>
         </html>
@@ -401,114 +540,18 @@
         // Write to the new window
         reportWindow.document.write(reportContent);
         reportWindow.document.close();
+    } catch (error) {
+        console.error("Error generating report:", error);
+        alert("Error generating report: " + error.message);
     }
-    
-    // Helper functions for report generation
-    function countCustomers(routes) {
-        let total = 0;
-        routes.forEach(route => {
-            // Subtract 2 for the depot (start and end)
-            total += route.stops.length - 2;
-        });
-        return total;
-    }
-    
-    function getRouteColor(index) {
-        const routeColors = [
-            '#ff6384', '#36a2eb', '#ffce56', '#4bc0c0', '#9966ff',
-            '#ff9f40', '#c9cbcf', '#7cbb00', '#f652a0', '#00bcf2'
-        ];
-        return routeColors[index % routeColors.length];
-    }
-    
-    // Loading indicator functions
-    function showLoading(message) {
-        // Create loading indicator if it doesn't exist
-        if (!document.getElementById('reportLoadingIndicator')) {
-            const loadingDiv = document.createElement('div');
-            loadingDiv.id = 'reportLoadingIndicator';
-            loadingDiv.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center';
-            loadingDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
-            loadingDiv.style.zIndex = '9999';
-            
-            loadingDiv.innerHTML = `
-                <div class="bg-white p-3 rounded shadow">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner-border text-primary me-3" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <div id="reportLoadingMessage">
-                            ${message || 'Loading...'}
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(loadingDiv);
-        } else {
-            // Update message if indicator already exists
-            document.getElementById('reportLoadingMessage').textContent = message || 'Loading...';
-            document.getElementById('reportLoadingIndicator').style.display = 'flex';
-        }
-    }
-    
-    function hideLoading() {
-        const loadingIndicator = document.getElementById('reportLoadingIndicator');
-        if (loadingIndicator) {
-            loadingIndicator.style.display = 'none';
-        }
-    }
-    
-    // Fix for the displaySolutionResults function to properly save solution
-    const originalDisplaySolutionResults = window.displaySolutionResults;
-    if (typeof originalDisplaySolutionResults === 'function') {
-        window.displaySolutionResults = function(data) {
-            console.log("Enhanced displaySolutionResults called to save solution data");
-            
-            // Save solution data in global appState
-            if (data && data.solution) {
-                window.appState.lastSolution = data.solution;
-                window.appState.solutionReady = true;
-                console.log("Solution data saved to appState");
-            }
-            
-            // Call original function
-            originalDisplaySolutionResults(data);
-        };
-    }
-    
-    // Also intercept the getSolution function to save the job ID
-    const originalGetSolution = window.getSolution;
-    if (typeof originalGetSolution === 'function') {
-        window.getSolution = function(jobId) {
-            if (jobId) {
-                window.appState.jobId = jobId;
-                console.log("Job ID saved:", jobId);
-            }
-            
-            // Call original function
-            if (arguments.length > 0) {
-                return originalGetSolution.apply(this, arguments);
-            } else {
-                return originalGetSolution();
-            }
-        };
-    }
-    
-    // Intercept the solve function to save the job ID
-    const originalSolveProblem = window.solveProblem;
-    if (typeof originalSolveProblem === 'function') {
-        window.solveProblem = function() {
-            console.log("Enhanced solve problem called");
-            
-            // Reset solution data on new solve
-            window.appState.solutionReady = false;
-            window.appState.lastSolution = null;
-            
-            // Call original function
-            return originalSolveProblem.apply(this, arguments);
-        };
-    }
-    
-    console.log("Enhanced report generation fix loaded successfully");
-})();
+}
+
+// Helper functions for report generation
+function countCustomers(routes) {
+    let total = 0;
+    routes.forEach(route => {
+        // Subtract 2 for the depot (start and end)
+        total += route.stops.length - 2;
+    });
+    return total;
+}
