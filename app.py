@@ -47,6 +47,27 @@ def index():
 @app.route('/templates')
 def templates():
     return render_template('index.html')
+
+@app.route('/get_google_maps_key', methods=['GET'])
+def get_google_maps_key():
+    """Return the Google Maps API key for client-side use"""
+    return jsonify({
+        'success': True,
+        'api_key': GOOGLE_MAPS_API_KEY
+    })
+
+# Add this route to dynamically inject the API key into the page
+@app.route('/google_maps_config.js')
+def google_maps_config():
+    """Serve a JavaScript file with the Google Maps API key"""
+    js_content = f"""
+    // Google Maps API Configuration
+    const GOOGLE_MAPS_API_KEY = "{GOOGLE_MAPS_API_KEY}";
+    console.log("Google Maps API key loaded");
+    """
+    response = make_response(js_content)
+    response.headers['Content-Type'] = 'application/javascript'
+    return response
 @app.route('/get_distance_matrix', methods=['GET'])
 def get_distance_matrix():
     if 'problem_data' not in session:
