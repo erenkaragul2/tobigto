@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouteOptimize - Intelligent Route Optimization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a56db;
+            --primary-light: #e5edff;
+            --secondary: #6c7280;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --light: #f9fafb;
+            --dark: #111827;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+            --border-radius: 0.5rem;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: var(--gray-700);
+            background-color: #f0f5ff;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        /* Header & Navigation */
+        header {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            padding: 1rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            color: var(--gray-500);
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .dark-mode-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.25rem;
+            color: var(--gray-500);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0f3c9e;
+        }
+
+        .btn-outline {
+            border: 1px solid var(--gray-300);
+            background-color: transparent;
+            color: var(--gray-700);
+        }
+
+        .btn-outline:hover {
+            background-color: var(--gray-100);
+        }
+
+        .btn-lg {
+            padding: 0.75rem 1.5rem;
+            font-size: 1.1rem;
+        }
+
+        .btn-icon {
+            margin-right: 0.5rem;
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 4rem 0;
+            background-color: #fff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-content {
+            max-width: 600px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            color: var(--gray-900);
+        }
+
+        .hero-title-highlight {
+            color: var(--primary);
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--gray-500);
+            margin-bottom: 2rem;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .hero-image {
+            position: absolute;
+            right: -100px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 45%;
+            z-index: 1;
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .trial-note {
+            font-size: 0.9rem;
+            color: var(--gray-500);
+            margin-top: 1rem;
+        }
+
+        /* Features Section */
+        .features {
+            padding: 5rem 0;
+            background-color: #fff;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 1rem;
+        }
+
+        .section-title span {
+            color: var(--primary);
+        }
+
+        .section-description {
+            font-size: 1.2rem;
+            color: var(--gray-500);
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .feature-card {
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        .feature-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--gray-900);
+            margin-bottom: 1rem;
+        }
+
+        .feature-description {
+            color: var(--gray-500);
+            font-size: 0.95rem;
+        }
+
+        /* Advanced Features */
+        .advanced-features {
+            padding: 5rem 0;
+            background-color: var(--primary-light);
+        }
+
+        .feature-list {
+            margin-top: 2rem;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+        }
+
+        .feature-check {
+            color: var(--primary);
+            margin-right: 1rem;
+            margin-top: 0.2rem;
+        }
+
+        /* Pricing Section */
+        .pricing {
+            padding: 5rem 0;
+            background-color: white;
+        }
+
+        .pricing-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 2rem 0;
+            gap: 1rem;
+        }
+
+        .toggle-button {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+
+        .toggle-button input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--gray-300);
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        .toggle-button input:checked + .toggle-slider {
+            background-color: var(--primary);
+        }
+
+        .toggle-button input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+
+        .pricing-save {
+            background-color: var(--primary-light);
+            color: var(--primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .pricing-plans {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .pricing-card {
+            flex: 1;
+            min-width: 300px;
+            max-width: 350px;
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            border: 1px solid var(--gray-200);
+            transition: transform 0.3s, box-shadow 0.3s;
+            position: relative;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .popular-badge {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--primary);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 1rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .pricing-header {
+            margin-bottom: 2rem;
+        }
+
+        .plan-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-description {
+            color: var(--gray-500);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .plan-price {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-price span {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--gray-500);
+        }
+
+        .plan-billing {
+            font-size: 0.9rem;
+            color: var(--gray-500);
+            margin-bottom: 2rem;
+        }
+
+        .plan-features {
+            list-style: none;
+            margin-bottom: 2rem;
+        }
+
+        .plan-features li {
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .feature-included {
+            color: var(--success);
+            margin-right: 0.5rem;
+        }
+
+        .feature-excluded {
+            color: var(--danger);
+            margin-right: 0.5rem;
+        }
+
+        /* Testimonials */
+        .testimonials {
+            padding: 5rem 0;
+            background-color: var(--primary-light);
+        }
+
+        .testimonial-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .testimonial-card {
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+        }
+
+        .testimonial-content {
+            margin-bottom: 2rem;
+            font-style: italic;
+            color: var(--gray-700);
+        }
+
+        .testimonial-author {
+            display: flex;
+            align-items: center;
+        }
+
+        .author-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 1rem;
+        }
+
+        .author-info h5 {
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .author-info p {
+            font-size: 0.9rem;
+            color: var(--gray-500);
+        }
+
+        .testimonial-stars {
+            color: var(--warning);
+            margin-top: 0.5rem;
+        }
+
+        /* CTA Section */
+        .cta {
+            padding: 5rem 0;
+            background-color: var(--primary);
+            color: white;
+            text-align: center;
+        }
+
+        .cta h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .cta p {
+            font-size: 1.2rem;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            opacity: 0.9;
+        }
+
+        .btn-white {
+            background-color: white;
+            color: var(--primary);
+        }
+
+        .btn-white:hover {
+            background-color: var(--gray-100);
+        }
+
+        .btn-outline-white {
+            border: 1px solid white;
+            color: white;
+        }
+
+        .btn-outline-white:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Footer */
+        footer {
+            background-color: var(--gray-900);
+            color: white;
+            padding: 4rem 0 2rem;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .footer-brand p {
+            color: var(--gray-400);
+            margin-top: 1rem;
+        }
+
+        .footer-heading {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .footer-links {
+            list-style: none;
+        }
+
+        .footer-links li {
+            margin-bottom: 0.5rem;
+        }
+
+        .footer-links a {
+            color: var(--gray-400);
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: white;
+        }
+
+        .social-links {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .social-links a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        .social-links a:hover {
+            background-color: var(--primary);
+        }
+
+        .footer-bottom {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 2rem;
+            text-align: center;
+            color: var(--gray-400);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .hero h1 {
+                font-size: 3rem;
+            }
+            
+            .hero-image {
+                right: -150px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero-content {
+                max-width: 100%;
+                text-align: center;
+            }
+            
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .hero-buttons {
+                justify-content: center;
+            }
+            
+            .hero-image {
+                display: none;
+            }
+            
+            .hero-stats {
+                justify-content: center;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .mobile-menu-btn {
+                display: block;
+            }
+            
+            .pricing-card {
+                max-width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .hero-buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+            
+            .pricing-toggle {
+                flex-direction: column;
+            }
+        }
+
+        /* Dashboard metrics section */
+        .metrics {
+            position: absolute;
+            right: 50px;
+            top: 50%;
+            transform: translateY(-30%);
+            z-index: 2;
+        }
+
+        .metric-card {
+            position: relative;
+            background-color: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            width: 180px;
+            margin-bottom: 1.5rem;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fadeIn {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        .delay-1 {
+            animation-delay: 0.2s;
+        }
+
+        .delay-2 {
+            animation-delay: 0.4s;
+        }
+
+        .delay-3 {
+            animation-delay: 0.6s;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="#" class="logo">RouteOptimize</a>
+                <div class="nav-links">
+                    <a href="#">Home</a>
+                    <a href="#features">Features</a>
+                    <a href="#pricing">Pricing</a>
+                    <a href="#testimonials">Testimonials</a>
+                </div>
+                <div class="nav-actions">
+                    <button class="dark-mode-toggle" aria-label="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <a href="#" class="btn btn-outline">Login</a>
+                    <a href="#" class="btn btn-primary">Sign Up</a>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content animate-fadeIn">
+                <h1>
+                    <span class="hero-title-highlight">Intelligent Route</span> Optimization for Modern Businesses
+                </h1>
+                <p>
+                    Save time, reduce costs, and improve customer satisfaction with our AI-powered route optimization platform. Perfect for delivery services, field technicians, and sales teams.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#" class="btn btn-primary btn-lg">
+                        <i class="fas fa-play btn-icon"></i>
+                        Start Free Trial
+                    </a>
+                    <a href="#" class="btn btn-outline btn-lg">
+                        <i class="fas fa-video btn-icon"></i>
+                        Watch Demo
+                    </a>
+                </div>
+                <div class="trial-note">
+                    <i class="fas fa-check-circle"></i> No credit card required • 14-day free trial • Cancel anytime
+                </div>
+            </div>
+
+            <div class="metrics animate-fadeIn delay-2">
+                <div class="metric-card">
+                    <div class="metric-label">Route Efficiency</div>
+                    <div class="metric-value">+42%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Fuel Savings</div>
+                    <div class="metric-value">-28%</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Powerful Features for <span>Optimal Routes</span></h2>
+                <p class="section-description">
+                    Everything you need to streamline your logistics operations and deliver exceptional service.
+                </p>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card animate-fadeIn">
+                    <i class="fas fa-route feature-icon"></i>
+                    <h3 class="feature-title">Intelligent Route Planning</h3>
+                    <p class="feature-description">
+                        Our AI algorithms calculate the most efficient routes considering traffic, delivery windows, and vehicle constraints.
+                    </p>
+                </div>
+
+                <div class="feature-card animate-fadeIn delay-1">
+                    <i class="fas fa-truck feature-icon"></i>
+                    <h3 class="feature-title">Fleet Management</h3>
+                    <p class="feature-description">
+                        Manage your entire fleet from a single dashboard. Assign vehicles to routes based on capacity and availability.
+                    </p>
+                </div>
+
+                <div class="feature-card animate-fadeIn delay-2">
+                    <i class="fas fa-clock feature-icon"></i>
+                    <h3 class="feature-title">Real-time Updates</h3>
+                    <p class="feature-description">
+                        Adapt to changes on the fly. Add new stops, handle cancellations, and reroute drivers in real-time.
+                    </p>
+                </div>
+
+                <div class="feature-card animate-fadeIn">
+                    <i class="fas fa-chart-line feature-icon"></i>
+                    <h3 class="feature-title">Analytics & Reporting</h3>
+                    <p class="feature-description">
+                        Gain insights into your operations with detailed reports on route efficiency, driver performance, and cost savings.
+                    </p>
+                </div>
+
+                <div class="feature-card animate-fadeIn delay-1">
+                    <i class="fas fa-bell feature-icon"></i>
+                    <h3 class="feature-title">Customer Notifications</h3>
+                    <p class="feature-description">
+                        Keep your customers informed with automated ETA updates, delivery confirmations, and feedback collection.
+                    </p>
+                </div>
+
+                <div class="feature-card animate-fadeIn delay-2">
+                    <i class="fas fa-mobile-alt feature-icon"></i>
+                    <h3 class="feature-title">Mobile App Integration</h3>
+                    <p class="feature-description">
+                        Drivers can access routes, navigation, and delivery information through our intuitive mobile application.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="advanced-features">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-6">
+                    <h2 class="section-title">Advanced AI Route Optimization</h2>
+                    <p class="section-description">
+                        Our proprietary algorithm considers multiple factors simultaneously to create truly optimal routes:
+                    </p>
+
+                    <div class="feature-list">
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle feature-check"></i>
+                            <p>Traffic patterns and real-time conditions</p>
+                        </div>
+
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle feature-check"></i>
+                            <p>Time windows and delivery priorities</p>
+                        </div>
+
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle feature-check"></i>
+                            <p>Vehicle capacity and specifications</p>
+                        </div>
+
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle feature-check"></i>
+                            <p>Driver schedules and break requirements</p>
+                        </div>
+
+                        <div class="feature-item">
+                            <i class="fas fa-check-circle feature-check"></i>
+                            <p>Geographic clustering for efficiency</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <img src="/api/placeholder/480/400" alt="Advanced optimization dashboard" style="width: 100%; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Simple, <span>Transparent</span> Pricing</h2>
+                <p class="section-description">
+                    Choose the plan that works best for your business. All plans include a 14-day free trial.
+                </p>
+            </div>
+
+            <div class="pricing-toggle">
+                <span>Monthly</span>
+                <label class="toggle-button">
+                    <input type="checkbox" id="billingToggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span>Annual</span>
+                <span class="pricing-save">Save 20%</span>
+            </div>
+
+            <div class="pricing-plans">
+                <div class="pricing-card animate-fadeIn">
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Starter</h3>
+                        <p class="plan-description">Perfect for small businesses and startups</p>
+                        <div class="plan-price">$39<span>/month</span></div>
+                        <div class="plan-billing">Billed annually ($468/year)</div>
+                    </div>
+
+                    <ul class="plan-features">
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Up to 5 vehicles
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Basic route optimization
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Email support
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Mobile app access
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Customer notifications
+                        </li>
+                        <li>
+                            <i class="fas fa-times feature-excluded"></i>
+                            Real-time tracking
+                        </li>
+                        <li>
+                            <i class="fas fa-times feature-excluded"></i>
+                            Advanced analytics
+                        </li>
+                        <li>
+                            <i class="fas fa-times feature-excluded"></i>
+                            API access
+                        </li>
+                        <li>
+                            <i class="fas fa-times feature-excluded"></i>
+                            Custom integrations
+                        </li>
+                    </ul>
+
+                    <a href="#" class="btn btn-primary btn-lg" style="width: 100%">Start Free Trial</a>
+                </div>
+
+                <div class="pricing-card animate-fadeIn delay-1">
+                    <div class="popular-badge">Most Popular</div>
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Professional</h3>
+                        <p class="plan-description">Ideal for growing businesses with multiple vehicles</p>
+                        <div class="plan-price">$79<span>/month</span></div>
+                        <div class="plan-billing">Billed annually ($948/year)</div>
+                    </div>
+
+                    <ul class="plan-features">
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Up to 20 vehicles
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Advanced route optimization
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Real-time tracking
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Priority email & chat support
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Mobile app access
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Customer notifications
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Basic analytics
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            API access
+                        </li>
+                        <li>
+                            <i class="fas fa-times feature-excluded"></i>
+                            Custom integrations
+                        </li>
+                    </ul>
+
+                    <a href="#" class="btn btn-primary btn-lg" style="width: 100%">Start Free Trial</a>
+                </div>
+
+                <div class="pricing-card animate-fadeIn delay-2">
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Enterprise</h3>
+                        <p class="plan-description">For large fleets and complex logistics operations</p>
+                        <div class="plan-price">$159<span>/month</span></div>
+                        <div class="plan-billing">Billed annually ($1908/year)</div>
+                    </div>
+
+                    <ul class="plan-features">
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Unlimited vehicles
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Premium route optimization
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Real-time tracking
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            24/7 priority support
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Mobile app access
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Advanced customer notifications
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Advanced analytics & reporting
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            API access
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Custom integrations
+                        </li>
+                        <li>
+                            <i class="fas fa-check feature-included"></i>
+                            Dedicated account manager
+                        </li>
+                    </ul>
+
+                    <a href="#" class="btn btn-primary btn-lg" style="width: 100%">Start Free Trial</a>
+                </div>
+            </div>
+
+            <div class="text-center mt-5">
+                <p>Need a custom solution?</p>
+                <a href="#" class="btn btn-outline">Contact our sales team</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="testimonials" id="testimonials">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Trusted by <span>Businesses</span> Like Yours</h2>
+                <p class="section-description">
+                    See what our customers have to say about RouteOptimize
+                </p>
+            </div>
+
+            <div class="testimonial-grid">
+                <div class="testimonial-card animate-fadeIn">
+                    <p class="testimonial-content">
+                        "RouteOptimize has completely transformed our delivery operations. We've reduced our fuel costs by 30% and can handle 20% more deliveries with the same fleet."
+                    </p>
+                    <div class="testimonial-author">
+                        <img src="/api/placeholder/100/100" alt="Sarah J." class="author-avatar">
+                        <div class="author-info">
+                            <h5>Sarah Johnson</h5>
+                            <p>Logistics Manager, Fresh Goods Inc.</p>
+                            <div class="testimonial-stars">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="testimonial-card animate-fadeIn delay-1">
+                    <p class="testimonial-content">
+                        "The real-time updates feature has been a game-changer for our field service team. We can now respond to emergency calls without disrupting our schedule."
+                    </p>
+                    <div class="testimonial-author">
+                        <img src="/api/placeholder/100/100" alt="Michael R." class="author-avatar">
+                        <div class="author-info">
+                            <h5>Michael Rodriguez</h5>
+                            <p>Operations Director, Tech Services Ltd.</p>
+                            <div class="testimonial-stars">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="testimonial-card animate-fadeIn delay-2">
+                    <p class="testimonial-content">
+                        "Our customers love the accurate ETAs and real-time updates. Our customer satisfaction scores have improved by 45% since implementing RouteOptimize."
+                    </p>
+                    <div class="testimonial-author">
+                        <img src="/api/placeholder/100/100" alt="Emma L." class="author-avatar">
+                        <div class="author-info">
+                            <h5>Emma Lewis</h5>
+                            <p>Customer Experience Manager, Urban Delivery</p>
+                            <div class="testimonial-stars">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star-half-alt"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to Optimize Your Routes?</h2>
+            <p>
+                Start your 14-day free trial today and see how RouteOptimize can transform your logistics operations.
+            </p>
+            <div class="hero-buttons">
+                <a href="#" class="btn btn-white btn-lg">
+                    <i class="fas fa-play btn-icon"></i>
+                    Start Free Trial
+                </a>
+                <a href="#" class="btn btn-outline-white btn-lg">
+                    <i class="fas fa-calendar btn-icon"></i>
+                    Schedule a Demo
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <h3 class="logo">RouteOptimize</h3>
+                    <p>
+                        Intelligent route optimization for modern businesses. Save time, reduce costs, and improve customer satisfaction.
+                    </p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-facebook-f"></i></a>
+                        <a href="#"><i class="fab fa-linkedin-in"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="footer-heading">Company</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Careers</a></li>
+                        <li><a href="#">Blog</a></li>
+                        <li><a href="#">Press</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="footer-heading">Product</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">Features</a></li>
+                        <li><a href="#">Pricing</a></li>
+                        <li><a href="#">Customers</a></li>
+                        <li><a href="#">Integrations</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="footer-heading">Resources</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">Documentation</a></li>
+                        <li><a href="#">Guides</a></li>
+                        <li><a href="#">API Reference</a></li>
+                        <li><a href="#">Community</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="footer-heading">Contact</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">Contact Us</a></li>
+                        <li><a href="#">Support</a></li>
+                        <li><a href="#">Sales</a></li>
+                        <li><a href="#">Partners</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; 2025 RouteOptimize. All rights reserved.</p>
+                <p>
+                    <a href="#">Privacy Policy</a> • 
+                    <a href="#">Terms of Service</a> • 
+                    <a href="#">Cookie Policy</a>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Billing toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const billingToggle = document.getElementById('billingToggle');
+            const monthlyPrices = ['$49', '$99', '$199'];
+            const annualPrices = ['$39', '$79', '$159'];
+            const priceElements = document.querySelectorAll('.plan-price');
+            const billingTexts = document.querySelectorAll('.plan-billing');
+            
+            billingToggle.addEventListener('change', function() {
+                const isAnnual = billingToggle.checked;
+                const prices = isAnnual ? annualPrices : monthlyPrices;
+                
+                priceElements.forEach((element, index) => {
+                    element.innerHTML = `${prices[index]}<span>/month</span>`;
+                });
+                
+                billingTexts.forEach((element, index) => {
+                    if (isAnnual) {
+                        const annualAmount = parseInt(annualPrices[index].substring(1)) * 12;
+                        element.textContent = `Billed annually ($${annualAmount}/year)`;
+                    } else {
+                        element.textContent = 'Billed monthly';
+                    }
+                });
+            });
+            
+            // Dark mode toggle functionality
+            const darkModeToggle = document.querySelector('.dark-mode-toggle');
+            darkModeToggle.addEventListener('click', function() {
+                document.body.classList.toggle('dark-mode');
+                darkModeToggle.querySelector('i').classList.toggle('fa-moon');
+                darkModeToggle.querySelector('i').classList.toggle('fa-sun');
+            });
+            
+            // Scroll animation
+            function checkScroll() {
+                const elements = document.querySelectorAll('.animate-fadeIn');
+                
+                elements.forEach(element => {
+                    const rect = element.getBoundingClientRect();
+                    const windowHeight = window.innerHeight;
+                    
+                    if (rect.top <= windowHeight * 0.85) {
+                        element.style.opacity = '1';
+                        element.style.transform = 'translateY(0)';
+                    }
+                });
+            }
+            
+            // Set initial styles for animations
+            document.querySelectorAll('.animate-fadeIn').forEach(element => {
+                element.style.opacity = '0';
+                element.style.transform = 'translateY(20px)';
+                element.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+            });
+            
+            // Check elements on page load
+            checkScroll();
+            
+            // Check elements on scroll
+            window.addEventListener('scroll', checkScroll);
+        });
+    </script>
+</body>
+</html>

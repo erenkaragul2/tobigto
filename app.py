@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify, session
+# Description: Main application file for the CVRP solver web app
+from flask import Flask, request, jsonify, session, redirect, url_for, render_template
 import os
 import uuid
 import numpy as np
@@ -9,6 +10,8 @@ import threading
 import random
 import math
 import copy
+from flask_cors import CORS
+from supabase import create_client
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import os
@@ -23,18 +26,20 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'cvrp-secret-key'
-
+CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Create upload folder if it doesn't exist
-
+supabase_url = os.getenv('SUPABASE_URL')
+supabase_key = os.getenv('SUPABASE_KEY')
+supabase = create_client(supabase_url, supabase_key)
 
 # Global storage for ongoing solver jobs
 solver_jobs = {}
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    return render_template('landing.html')
 
 @app.route('/')
 def index():
@@ -55,7 +60,80 @@ def get_google_maps_key():
         'success': True,
         'api_key': GOOGLE_MAPS_API_KEY
     })
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        data = request.form
+        email = data.get('email')
+        password = data.get('password')
+        
+        try:
+            # Register user with Supabase
+            response = supabase.auth.sign_up({
+                "email": email,
+                "password": password,
+            })
+            
+            if response.user:
+                return redirect(url_for('login'))
+            else:
+                return render_template('signup.html', error="Signup failed. Please try again.")
+                
+        except Exception as e:
+            return render_template('signup.html', error=str(e))
+            
+    return render_template('signup.html')
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.form
+        email = data.get('email')
+        password = data.get('password')
+        
+        try:
+            # Login with Supabase
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if response.user:
+                # Store session data
+                session['user'] = {
+                    'id': response.user.id,
+                    'email': response.user.email,
+                    'access_token': response.session.access_token
+                }
+                return redirect(url_for('dashboard'))
+            else:
+                return render_template('login.html', error="Login failed. Please check your credentials.")
+                
+        except Exception as e:
+            return render_template('login.html', error=str(e))
+            
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    # Remove user data from session
+    session.pop('user', None)
+    
+    # Optional: Sign out from Supabase
+    supabase.auth.sign_out()
+    
+    return redirect(url_for('landing'))
+
+@app.route('/dashboard')
+def dashboard():
+    # Check if user is logged in
+    if 'user' not in session:
+        return redirect(url_for('login'))
+        
+    # Get user data
+    user = session['user']
+    
+    return render_template('dashboard.html', user=user)
 # Add this route to dynamically inject the API key into the page
 @app.route('/google_maps_config.js')
 def google_maps_config():
