@@ -23,11 +23,11 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'cvrp-secret-key'
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Create upload folder if it doesn't exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 
 # Global storage for ongoing solver jobs
 solver_jobs = {}
@@ -99,20 +99,14 @@ def upload_file():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'})
     
-    # Generate a unique filename
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-    
-    # Save the file
-    file.save(filepath)
-    
     try:
-        # Read the file based on its extension
+        # Read the file based on its extension without saving
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        
         if file_ext in ['.xlsx', '.xls']:
-            data_df = pd.read_excel(filepath)
+            data_df = pd.read_excel(file)
         elif file_ext == '.csv':
-            data_df = pd.read_csv(filepath)
+            data_df = pd.read_csv(file)
         else:
             return jsonify({'success': False, 'error': 'Unsupported file format'})
         
@@ -141,8 +135,8 @@ def upload_file():
         # Store data in session
         session['data'] = {
             'filename': file.filename,
-            'filepath': filepath,
-            'columns': data_df.columns.tolist()
+            'columns': data_df.columns.tolist(),
+            'dataframe': data_df.to_json(orient='split')  # Store the dataframe as JSON in the session
         }
         
         # Return headers to client
@@ -150,11 +144,18 @@ def upload_file():
             'success': True, 
             'message': f'File {file.filename} uploaded successfully',
             'columns': data_df.columns.tolist(),
-            'previewData': data_df.to_dict(orient='records')
+            'previewData': data_df.head(20).to_dict(orient='records')
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in file upload: {error_details}")
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'details': error_details
+        })
 
 @app.route('/generate_random', methods=['POST'])
 def generate_random():
@@ -222,36 +223,10 @@ def process_data():
     try:
         # Get parameters from request
         params = request.get_json()
-        filepath = session['data']['filepath']
         
-        # Read data again
-        file_ext = os.path.splitext(filepath)[1].lower()
-        if file_ext in ['.xlsx', '.xls']:
-            data_df = pd.read_excel(filepath)
-        elif file_ext == '.csv':
-            data_df = pd.read_csv(filepath)
-        
-        # Standardize column names (from previous step)
-        column_mapping = {}
-        for col in data_df.columns:
-            col_lower = col.lower()
-            if 'name' in col_lower or 'company' in col_lower:
-                column_mapping[col] = 'company_name'
-            elif ('coord' in col_lower and not ('x_' in col_lower or 'y_' in col_lower)) or \
-                ('location' in col_lower and not ('address' in col_lower)):
-                column_mapping[col] = 'coordinates'
-            elif 'demand' in col_lower or 'quantity' in col_lower or 'amount' in col_lower:
-                column_mapping[col] = 'demand'
-            elif 'address' in col_lower:
-                column_mapping[col] = 'address'
-            elif 'x_' in col_lower or 'lat' in col_lower:
-                column_mapping[col] = 'x_coord'
-            elif 'y_' in col_lower or 'lon' in col_lower or 'lng' in col_lower:
-                column_mapping[col] = 'y_coord'
-        
-        # Rename columns
-        if column_mapping:
-            data_df.rename(columns=column_mapping, inplace=True)
+        # Read dataframe from session
+        data_json = session['data']['dataframe']
+        data_df = pd.read_json(data_json, orient='split')
         
         # Get company names
         company_names = data_df['company_name'].tolist() if 'company_name' in data_df.columns else None
@@ -327,7 +302,7 @@ def process_data():
             'company_names': company_names,
             'depot': int(params.get('depot', 0)),
             'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
-            'max_vehicles': int(params.get('max_vehicles', 5)),  # Add this line
+            'max_vehicles': int(params.get('max_vehicles', 5)),
             'distance_type': distance_type
         }
         
@@ -344,9 +319,22 @@ def process_data():
         
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
-
+        traceback_str = traceback.format_exc()
+        print(f"Error processing data: {traceback_str}")
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'traceback': traceback_str
+        })
+@app.errorhandler(Exception)
+def handle_error(e):
+    import traceback
+    print(f"Unhandled exception: {traceback.format_exc()}")
+    return jsonify({
+        'success': False,
+        'error': str(e),
+        'traceback': traceback.format_exc()
+    }), 500
 @app.route('/solve', methods=['POST'])
 def solve():
     if 'problem_data' not in session:
