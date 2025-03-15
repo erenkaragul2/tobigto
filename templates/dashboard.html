@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - CVRP Solver{% endblock %}
+
+{% block head %}
+<style>
+    .user-info {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .user-email {
+        font-weight: bold;
+        color: #1a56db;
+    }
+    
+    .card {
+        transition: transform 0.3s;
+        margin-bottom: 20px;
+    }
+    
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    
+    .feature-icon {
+        font-size: 2rem;
+        margin-bottom: 15px;
+        color: #1a56db;
+    }
+    
+    .recent-activity {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .activity-item {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="user-info d-flex justify-content-between align-items-center">
+                <div>
+                    <h2>Welcome to your Dashboard</h2>
+                    <p>Logged in as <span class="user-email">{{ user.email }}</span></p>
+                </div>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">
+                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-route me-2"></i>My Route Optimizations</h4>
+                </div>
+                <div class="card-body">
+                    <p>Start a new route optimization or view your previous solutions.</p>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>New Optimization
+                        </a>
+                        <button class="btn btn-outline-secondary">
+                            <i class="fas fa-history me-2"></i>View History
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <div class="feature-icon">
+                                <i class="fas fa-truck"></i>
+                            </div>
+                            <h5 class="card-title">My Fleet</h5>
+                            <p class="card-text">Manage your vehicles and their capacities.</p>
+                            <a href="#" class="btn btn-outline-primary">Manage Fleet</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <div class="feature-icon">
+                                <i class="fas fa-map-marked-alt"></i>
+                            </div>
+                            <h5 class="card-title">Locations</h5>
+                            <p class="card-text">Manage your depots and delivery locations.</p>
+                            <a href="#" class="btn btn-outline-primary">Manage Locations</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-chart-line me-2"></i>Usage Stats</h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h5>Optimizations This Month</h5>
+                        <div class="progress">
+                            <div class="progress-bar bg-primary" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">5/20</div>
+                        </div>
+                        <small class="text-muted">5 of 20 optimizations used</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Routes Created</h5>
+                        <h2 class="text-primary">12</h2>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Distance Optimized</h5>
+                        <h2 class="text-primary">147.3 km</h2>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <a href="#" class="btn btn-sm btn-outline-secondary w-100">View Detailed Analytics</a>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h4><i class="fas fa-bell me-2"></i>Recent Activity</h4>
+                </div>
+                <div class="card-body p-0">
+                    <div class="recent-activity">
+                        <div class="activity-item p-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>Route Optimization Created</strong>
+                                <small class="text-muted">Today</small>
+                            </div>
+                            <div>10 stops, 2 vehicles</div>
+                        </div>
+                        <div class="activity-item p-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>New Location Added</strong>
+                                <small class="text-muted">Yesterday</small>
+                            </div>
+                            <div>Customer #1242</div>
+                        </div>
+                        <div class="activity-item p-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>Vehicle Added</strong>
+                                <small class="text-muted">3 days ago</small>
+                            </div>
+                            <div>Delivery Van #4</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize any dashboard-specific functionality here
+        console.log('Dashboard loaded for user: {{ user.email }}');
+    });
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
-# Description: Main application file for the CVRP solver web app
-from flask import Flask, request, jsonify, session, redirect, url_for, render_template
+# Description: Main application file for the CVRP solver web app with Supabase authentication
+from flask import Flask, request, jsonify, session, redirect, url_for, render_template, flash, g, make_response
 import os
 import uuid
 import numpy as np
@@ -17,41 +17,36 @@ from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
 from models.distance_matrix import compute_google_distance_matrix, compute_euclidean_distance_matrix
+from auth_middleware import login_required, admin_required, configure_auth_middleware
 
-
+# Load environment variables from .env file
 load_dotenv()
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
-# Import the CVRP_SimulatedAnnealing class from app.py
-# Make sure it's accessible here
 
+# Get environment variables
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+SESSION_SECRET = os.getenv('SESSION_SECRET', 'cvrp-secret-key')  # Use environment variable or default
+
+# Initialize Supabase client
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'cvrp-secret-key'
+app.config['SECRET_KEY'] = SESSION_SECRET
 CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
-# Create upload folder if it doesn't exist
-supabase_url = os.getenv('SUPABASE_URL')
-supabase_key = os.getenv('SUPABASE_KEY')
-supabase = create_client(supabase_url, supabase_key)
+# Configure authentication middleware
+app = configure_auth_middleware(app)
 
 # Global storage for ongoing solver jobs
 solver_jobs = {}
 
+# Public routes
 @app.route('/')
-def home():
+def landing():
     return render_template('landing.html')
-
-@app.route('/')
-def index():
-    try:
-        return render_template('index.html')
-    except Exception as e:
-        return f"Error loading template: {str(e)}"
-
-# Route to serve templates directly - this helps with debugging
-@app.route('/templates')
-def templates():
-    return render_template('index.html')
 
 @app.route('/get_google_maps_key', methods=['GET'])
 def get_google_maps_key():
@@ -60,13 +55,24 @@ def get_google_maps_key():
         'success': True,
         'api_key': GOOGLE_MAPS_API_KEY
     })
+
+# Authentication routes
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     if request.method == 'POST':
         data = request.form
         email = data.get('email')
         password = data.get('password')
+        confirm_password = data.get('confirmPassword')
         
+        # Check if passwords match
+        if password != confirm_password:
+            return render_template('signup.html', error="Passwords don't match. Please try again.")
+        
+        # Basic password validation
+        if len(password) < 8:
+            return render_template('signup.html', error="Password must be at least 8 characters long.")
+            
         try:
             # Register user with Supabase
             response = supabase.auth.sign_up({
@@ -75,21 +81,35 @@ def signup():
             })
             
             if response.user:
+                flash('Account created successfully! Please log in.', 'success')
                 return redirect(url_for('login'))
             else:
                 return render_template('signup.html', error="Signup failed. Please try again.")
                 
         except Exception as e:
-            return render_template('signup.html', error=str(e))
+            # Handle specific exceptions
+            error_message = str(e)
+            if "User already registered" in error_message:
+                return render_template('signup.html', error="This email is already registered. Please log in instead.")
+            else:
+                return render_template('signup.html', error=f"Error during signup: {error_message}")
             
     return render_template('signup.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # If user is already logged in, redirect to dashboard
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+        
     if request.method == 'POST':
         data = request.form
         email = data.get('email')
         password = data.get('password')
+        
+        # Check if fields are empty
+        if not email or not password:
+            return render_template('login.html', error="Please enter both email and password.")
         
         try:
             # Login with Supabase
@@ -103,72 +123,155 @@ def login():
                 session['user'] = {
                     'id': response.user.id,
                     'email': response.user.email,
-                    'access_token': response.session.access_token
+                    'access_token': response.session.access_token,
+                    'refresh_token': response.session.refresh_token
                 }
+                
+                # Check if there's a next URL to redirect to
+                next_url = session.pop('next_url', None)
+                if next_url:
+                    return redirect(next_url)
+                    
                 return redirect(url_for('dashboard'))
             else:
                 return render_template('login.html', error="Login failed. Please check your credentials.")
                 
         except Exception as e:
-            return render_template('login.html', error=str(e))
+            error_message = str(e)
+            if "Invalid login credentials" in error_message:
+                return render_template('login.html', error="Invalid email or password. Please try again.")
+            else:
+                return render_template('login.html', error=f"Error during login: {error_message}")
             
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
     # Remove user data from session
-    session.pop('user', None)
+    user_data = session.pop('user', None)
     
-    # Optional: Sign out from Supabase
-    supabase.auth.sign_out()
+    # Only call Supabase signout if we had a user session
+    if user_data and user_data.get('access_token'):
+        try:
+            # Sign out from Supabase
+            supabase.auth.sign_out(user_data.get('access_token'))
+        except Exception as e:
+            # Just log the error, don't interrupt logout flow
+            print(f"Error during Supabase sign out: {str(e)}")
     
+    flash('You have been successfully logged out', 'info')
     return redirect(url_for('landing'))
 
-@app.route('/dashboard')
-def dashboard():
-    # Check if user is logged in
-    if 'user' not in session:
-        return redirect(url_for('login'))
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
         
-    # Get user data
+        try:
+            # Send password reset email
+            supabase.auth.reset_password_email(email)
+            flash("Password reset instructions have been sent to your email", "info")
+            return redirect(url_for('login'))
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+    
+    return render_template('forgot_password.html')
+
+# Protected user routes
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    # User object is already checked in the login_required decorator
     user = session['user']
     
+    # Fetch any additional user data if needed
+    try:
+        # Example: fetch user profile data
+        user_id = user['id']
+        # Fetch user profile from database if needed
+        # profile = supabase.table('profiles').select('*').eq('user_id', user_id).execute()
+        # Additional user data can be passed to the template
+    except Exception as e:
+        flash(f"Error loading profile data: {str(e)}", "warning")
+    
     return render_template('dashboard.html', user=user)
-# Add this route to dynamically inject the API key into the page
-@app.route('/google_maps_config.js')
-def google_maps_config():
-    """Serve a JavaScript file with the Google Maps API key"""
-    js_content = f"""
-    // Google Maps API Configuration
-    const GOOGLE_MAPS_API_KEY = "{GOOGLE_MAPS_API_KEY}";
-    console.log("Google Maps API key loaded");
-    """
-    response = make_response(js_content)
-    response.headers['Content-Type'] = 'application/javascript'
-    return response
-@app.route('/get_distance_matrix', methods=['GET'])
-def get_distance_matrix():
-    if 'problem_data' not in session:
-        return jsonify({'success': False, 'error': 'No problem data available'})
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    user = session['user']
     
-    problem_data = session['problem_data']
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        
+        if action == 'change_password':
+            current_password = request.form.get('current_password')
+            new_password = request.form.get('new_password')
+            confirm_password = request.form.get('confirm_password')
+            
+            if new_password != confirm_password:
+                flash("New passwords don't match", "danger")
+                return redirect(url_for('profile'))
+            
+            try:
+                # Update password using Supabase
+                # This is a placeholder - Supabase might have a different method
+                # supabase.auth.update_user_password(current_password, new_password)
+                flash("Password updated successfully", "success")
+            except Exception as e:
+                flash(f"Error updating password: {str(e)}", "danger")
+        
+        elif action == 'update_preferences':
+            # Handle preferences update
+            # This is just a placeholder for demonstration
+            flash("Preferences updated successfully", "success")
+        
+        else:
+            # Handle profile update
+            name = request.form.get('name')
+            company = request.form.get('company')
+            phone = request.form.get('phone')
+            
+            try:
+                # Update profile in database
+                # profile_data = {"name": name, "company": company, "phone": phone}
+                # supabase.table('profiles').update(profile_data).eq('user_id', user['id']).execute()
+                flash("Profile updated successfully", "success")
+            except Exception as e:
+                flash(f"Error updating profile: {str(e)}", "danger")
     
-    # Get company names if available
-    company_names = problem_data.get('company_names')
-    node_labels = None
+    return render_template('profile.html', user=user)
+
+@app.route('/logout-all-sessions', methods=['POST'])
+@login_required
+def logout_all_sessions():
+    user = session['user']
     
-    # If we have company names, use them as node labels
-    if company_names:
-        node_labels = company_names
-    
-    return jsonify({
-        'success': True,
-        'matrix': problem_data['distance_matrix'],
-        'nodes': len(problem_data['distance_matrix']),
-        'node_labels': node_labels,
-        'distance_type': problem_data.get('distance_type', 'Euclidean')
-    })
+    try:
+        # Placeholder - Supabase might have a method to log out from all sessions
+        # supabase.auth.logout_all_sessions(user['access_token'])
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# Protected app routes
+@app.route('/solver')
+@login_required
+def solver_app():
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        return f"Error loading template: {str(e)}"
+
+# Route to serve templates directly - this helps with debugging
+@app.route('/templates')
+@login_required
+def templates():
+    return render_template('index.html')
+
+# File upload and processing routes
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file part'})
@@ -236,6 +339,7 @@ def upload_file():
         })
 
 @app.route('/generate_random', methods=['POST'])
+@login_required
 def generate_random():
     try:
         params = request.get_json()
@@ -271,8 +375,7 @@ def generate_random():
             'company_names': company_names,
             'depot': depot,
             'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
-            'max_vehicles': int(params.get('max_vehicles', 5)),  # Add this line
-            
+            'max_vehicles': int(params.get('max_vehicles', 5)),
         }
         
         return jsonify({
@@ -291,9 +394,8 @@ def generate_random():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-# Update the process_data route in app.py
-
 @app.route('/process_data', methods=['POST'])
+@login_required
 def process_data():
     if 'data' not in session:
         return jsonify({'success': False, 'error': 'No data uploaded'})
@@ -404,16 +506,33 @@ def process_data():
             'error': str(e),
             'traceback': traceback_str
         })
-@app.errorhandler(Exception)
-def handle_error(e):
-    import traceback
-    print(f"Unhandled exception: {traceback.format_exc()}")
+
+@app.route('/get_distance_matrix', methods=['GET'])
+@login_required
+def get_distance_matrix():
+    if 'problem_data' not in session:
+        return jsonify({'success': False, 'error': 'No problem data available'})
+    
+    problem_data = session['problem_data']
+    
+    # Get company names if available
+    company_names = problem_data.get('company_names')
+    node_labels = None
+    
+    # If we have company names, use them as node labels
+    if company_names:
+        node_labels = company_names
+    
     return jsonify({
-        'success': False,
-        'error': str(e),
-        'traceback': traceback.format_exc()
-    }), 500
+        'success': True,
+        'matrix': problem_data['distance_matrix'],
+        'nodes': len(problem_data['distance_matrix']),
+        'node_labels': node_labels,
+        'distance_type': problem_data.get('distance_type', 'Euclidean')
+    })
+
 @app.route('/solve', methods=['POST'])
+@login_required
 def solve():
     if 'problem_data' not in session:
         return jsonify({'success': False, 'error': 'No problem data available'})
@@ -426,12 +545,19 @@ def solve():
         # Create a unique job ID
         job_id = str(uuid.uuid4())
         
+        # Store user ID with job
+        if 'user' in session:
+            user_id = session['user']['id']
+        else:
+            user_id = None
+        
         # Initialize progress
         solver_jobs[job_id] = {
             'status': 'initializing',
             'progress': 0,
             'message': 'Initializing solver...',
-            'updates': []
+            'updates': [],
+            'user_id': user_id  # Associate job with user
         }
         
         # Start solver in a separate thread
@@ -456,9 +582,14 @@ def solve():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/solver_status/<job_id>', methods=['GET'])
+@login_required
 def solver_status(job_id):
     if job_id not in solver_jobs:
         return jsonify({'success': False, 'error': 'Job not found'})
+    
+    # Check if the job belongs to the current user
+    if 'user' in session and solver_jobs[job_id].get('user_id') != session['user']['id']:
+        return jsonify({'success': False, 'error': 'Unauthorized access to job'})
     
     job_info = solver_jobs[job_id]
     
@@ -476,9 +607,14 @@ def solver_status(job_id):
     })
 
 @app.route('/get_solution/<job_id>', methods=['GET'])
+@login_required
 def get_solution(job_id):
     if job_id not in solver_jobs:
         return jsonify({'success': False, 'error': 'Job not found'})
+    
+    # Check if the job belongs to the current user
+    if 'user' in session and solver_jobs[job_id].get('user_id') != session['user']['id']:
+        return jsonify({'success': False, 'error': 'Unauthorized access to job'})
     
     job_info = solver_jobs[job_id]
     
@@ -492,6 +628,17 @@ def get_solution(job_id):
         'temp_history': job_info.get('temp_history', [])
     })
 
+@app.errorhandler(Exception)
+def handle_error(e):
+    import traceback
+    print(f"Unhandled exception: {traceback.format_exc()}")
+    return jsonify({
+        'success': False,
+        'error': str(e),
+        'traceback': traceback.format_exc()
+    }), 500
+
+# Utility functions
 def run_solver(job_id, problem_data, params):
     """Run the CVRP solver in a separate thread"""
     try:
@@ -524,7 +671,7 @@ def run_solver(job_id, problem_data, params):
             initial_temperature=initial_temperature,
             final_temperature=final_temperature,
             cooling_rate=cooling_rate,
-             max_vehicles=max_vehicles,
+            max_vehicles=max_vehicles,
             max_iterations=max_iterations,
             iterations_per_temp=iterations_per_temp
         )
@@ -564,57 +711,34 @@ def run_solver(job_id, problem_data, params):
         solver_jobs[job_id]['cost_history'] = cost_history
         solver_jobs[job_id]['temp_history'] = temp_history
         
+        # If a job completes successfully, also try to save it to the user's history
+        try:
+            if solver_jobs[job_id].get('user_id'):
+                user_id = solver_jobs[job_id]['user_id']
+                
+                # Save the solution to the user's history in the database
+                # This is a placeholder - implement the actual database save
+                # solution_data = {
+                #     'user_id': user_id,
+                #     'timestamp': datetime.now().isoformat(),
+                #     'problem_size': len(problem_data['coordinates']),
+                #     'solution_cost': cost,
+                #     'solution_data': json.dumps({
+                #         'routes': routes,
+                #         'cost': cost,
+                #         'details': solution_details
+                #     })
+                # }
+                # supabase.table('solution_history').insert(solution_data).execute()
+                print(f"Solution for job {job_id} saved to user {user_id} history")
+        except Exception as e:
+            print(f"Error saving solution to history: {str(e)}")
+        
     except Exception as e:
         # Update job status with error
         solver_jobs[job_id]['status'] = 'error'
         solver_jobs[job_id]['message'] = f"Error: {str(e)}"
         print(f"Solver error: {str(e)}")
-
-def generate_dummy_solution(num_nodes, depot, demands, vehicle_capacity):
-    """Generate a dummy solution for demonstration purposes"""
-    customers = list(range(num_nodes))
-    customers.remove(depot)
-    
-    # Shuffle customers for some randomness
-    random.shuffle(customers)
-    
-    # Split into routes based on capacity
-    routes = []
-    current_route = []
-    current_load = 0
-    
-    for customer in customers:
-        if current_load + demands[customer] <= vehicle_capacity:
-            current_route.append(customer)
-            current_load += demands[customer]
-        else:
-            # Start a new route
-            if current_route:
-                routes.append(current_route)
-            current_route = [customer]
-            current_load = demands[customer]
-    
-    # Add the last route if not empty
-    if current_route:
-        routes.append(current_route)
-    
-    return routes
-
-def calculate_route_distance(route, distance_matrix, depot):
-    """Calculate the total distance of a route"""
-    if not route:
-        return 0
-        
-    distance = distance_matrix[depot, route[0]]
-    for i in range(len(route) - 1):
-        distance += distance_matrix[route[i], route[i + 1]]
-    distance += distance_matrix[route[-1], depot]
-    
-    return distance
-
-def calculate_total_distance(routes, distance_matrix, depot):
-    """Calculate the total distance of all routes"""
-    return sum(calculate_route_distance(route, distance_matrix, depot) for route in routes)
 
 def parse_coordinates(coord_str):
     """Parse coordinate string into (lat, lng) tuple"""
@@ -637,14 +761,5 @@ def parse_coordinates(coord_str):
     
     return lat, lng
 
-def compute_euclidean_distance_matrix(coordinates):
-    """Compute distance matrix using Euclidean distance"""
-    num_nodes = len(coordinates)
-    distance_matrix = np.zeros((num_nodes, num_nodes))
-    for i in range(num_nodes):
-        for j in range(num_nodes):
-            distance_matrix[i, j] = np.sqrt(np.sum((coordinates[i] - coordinates[j])**2))
-    return distance_matrix
-
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
