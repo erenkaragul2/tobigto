@@ -791,4 +791,4 @@ def parse_coordinates(coord_str):
     return lat, lng
 
 if __name__ == '__main__':
-    app.run(debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true')
+    app.run()

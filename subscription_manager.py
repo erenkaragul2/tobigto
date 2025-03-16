@@ -59,6 +59,44 @@ class LemonSqueezyClient:
         url = f"{self.BASE_URL}/customers/{customer_id}"
         response = requests.get(url, headers=self.headers)
         return response.json() if response.ok else None
+    def create_checkout(self, store_id, variant_id, checkout_data):
+        """
+        Create a checkout session via Lemon Squeezy API
+        
+        Args:
+            store_id: The store ID
+            variant_id: The variant ID for the product
+            checkout_data: Dictionary with checkout data (email, custom fields, etc.)
+            
+        Returns:
+            Checkout session data including URL
+        """
+        url = f"{self.BASE_URL}/checkouts"
+        
+        payload = {
+            "data": {
+                "type": "checkouts",
+                "attributes": {
+                    "store_id": store_id,
+                    "variant_id": variant_id,
+                    "custom_price": None,  # Use default price
+                    "product_options": {},
+                    "checkout_options": {},
+                    "checkout_data": checkout_data
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            if response.ok:
+                return response.json()
+            else:
+                print(f"Error creating checkout: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"Exception creating checkout: {str(e)}")
+            return None
     
     def create_checkout_session(self, user_id, email, plan_id, success_url, cancel_url):
         """Create a checkout session for a subscription with improved validation"""

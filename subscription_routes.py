@@ -135,7 +135,7 @@ def portal():
 
 @subscription_bp.route('/webhooks/lemon-squeezy', methods=['POST'])
 def lemon_squeezy_webhook():
-    """Handle webhooks from Lemon Squeezy with improved security"""
+    """Handle webhooks from Lemon Squeezy with improved security corouted.vercel.app/webhooks/lemon-squeezy"""
     # Get the webhook signature
     signature = request.headers.get('X-Signature')
     
