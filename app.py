@@ -81,6 +81,8 @@ def inject_subscription_data():
                 if plan_info['variant_id'] == plan_id:
                     subscription['plan_name'] = plan_info['name']
                     subscription['features'] = plan_info['features']
+                    subscription['limits'] = plan_info['limits']  # Add this line
+                    subscription['plan_key'] = plan_key          # Add this for reference
                     break
             
         return {
@@ -92,7 +94,18 @@ def inject_subscription_data():
 @app.route('/')
 def landing():
     return render_template('landing.html')
-
+@app.template_filter('date')
+def date_filter(value, format='%Y-%m-%d'):
+    """Convert a datetime to a different format."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        try:
+            from datetime import datetime
+            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return value
+    return value.strftime(format)
 @app.route('/get_google_maps_key', methods=['GET'])
 def get_google_maps_key():
     """Return the Google Maps API key for client-side use"""
