@@ -3,7 +3,7 @@ import requests
 import json
 from datetime import datetime, timezone
 from functools import wraps
-from flask import request, redirect, url_for, session, flash
+from flask import request, redirect, url_for, session, flash, current_app
 
 class LemonSqueezyClient:
     """Client for interacting with the Lemon Squeezy API"""
@@ -18,14 +18,14 @@ class LemonSqueezyClient:
             "Authorization": f"Bearer {api_key}"
         }
     
-    def get_user_subscription(self, user_id):
+    def get_user_subscription(self, user_id, supabase_client, plans):
         """Get the current subscription for a user with improved error handling"""
         if not user_id:
-            app.logger.error("get_user_subscription called with empty user_id")
+            current_app.logger.error("get_user_subscription called with empty user_id")
             return None
             
         try:
-            response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).eq('status', 'active').execute()
+            response = supabase_client.table('subscriptions').select('*').eq('user_id', user_id).eq('status', 'active').execute()
             
             if response.data and len(response.data) > 0:
                 subscription = response.data[0]
@@ -35,13 +35,13 @@ class LemonSqueezyClient:
                     end_date = datetime.fromisoformat(subscription['current_period_end'].replace('Z', '+00:00'))
                     if end_date < datetime.now(timezone.utc):
                         # Subscription has expired, update status
-                        app.logger.info(f"Subscription {subscription['id']} has expired, updating status")
-                        self.supabase.table('subscriptions').update({'status': 'expired'}).eq('id', subscription['id']).execute()
+                        current_app.logger.info(f"Subscription {subscription['id']} has expired, updating status")
+                        supabase_client.table('subscriptions').update({'status': 'expired'}).eq('id', subscription['id']).execute()
                         return None
                 
                 # Enrich the subscription with plan details
                 plan_id = subscription.get('plan_id')
-                for plan_key, plan_info in self.PLANS.items():
+                for plan_key, plan_info in plans.items():
                     if plan_info['variant_id'] == plan_id:
                         subscription['plan_name'] = plan_info['name']
                         subscription['plan_key'] = plan_key
@@ -51,7 +51,7 @@ class LemonSqueezyClient:
                 return subscription
             return None
         except Exception as e:
-            app.logger.error(f"Error fetching subscription for user {user_id}: {str(e)}")
+            current_app.logger.error(f"Error fetching subscription for user {user_id}: {str(e)}")
             return None
     
     def get_customer(self, customer_id):
@@ -59,9 +59,10 @@ class LemonSqueezyClient:
         url = f"{self.BASE_URL}/customers/{customer_id}"
         response = requests.get(url, headers=self.headers)
         return response.json() if response.ok else None
+        
     def create_checkout(self, store_id, variant_id, checkout_data):
         """
-        Create a checkout session via Lemon Squeezy API
+        Create a checkout session via Lemon Squeezy API with improved debugging
         
         Args:
             store_id: The store ID
@@ -88,66 +89,35 @@ class LemonSqueezyClient:
         }
         
         try:
+            print(f"Sending request to Lemon Squeezy API: {url}")
+            print(f"Request payload: {json.dumps(payload)}")
+            
             response = requests.post(url, headers=self.headers, json=payload)
+            
+            print(f"Response status code: {response.status_code}")
+            print(f"Response headers: {response.headers}")
+            
+            # Try to get JSON response if available
+            try:
+                response_data = response.json()
+                print(f"Response JSON: {json.dumps(response_data)}")
+            except:
+                print(f"Response text: {response.text}")
+            
             if response.ok:
-                return response.json()
+                data = response.json()
+                checkout_url = data.get('data', {}).get('attributes', {}).get('url')
+                print(f"Generated checkout URL: {checkout_url}")
+                return data
             else:
-                print(f"Error creating checkout: {response.status_code} - {response.text}")
+                error_message = f"Error creating checkout: {response.status_code} - {response.text}"
+                print(error_message)
                 return None
         except Exception as e:
-            print(f"Exception creating checkout: {str(e)}")
+            error_message = f"Exception creating checkout: {str(e)}"
+            print(error_message)
             return None
     
-    def create_checkout_session(self, user_id, email, plan_id, success_url, cancel_url):
-        """Create a checkout session for a subscription with improved validation"""
-        if not user_id or not email:
-            app.logger.error("Missing required parameters for checkout session")
-            raise ValueError("User ID and email are required")
-            
-        if plan_id not in self.PLANS:
-            app.logger.error(f"Invalid plan ID: {plan_id}")
-            raise ValueError(f"Invalid plan ID: {plan_id}")
-        
-        plan = self.PLANS[plan_id]
-        
-        if not plan.get('variant_id'):
-            app.logger.error(f"Missing variant ID for plan: {plan_id}")
-            raise ValueError(f"Plan configuration error: missing variant ID")
-        
-        if not self.store_id:
-            app.logger.error("Missing store ID in subscription manager")
-            raise ValueError("Subscription manager configuration error: missing store ID")
-        
-        checkout_data = {
-            "email": email,
-            "custom": {
-                "user_id": user_id
-            },
-            "success_url": success_url,
-            "cancel_url": cancel_url
-        }
-        
-        app.logger.info(f"Creating checkout session for user {user_id}, plan {plan_id}")
-        
-        try:
-            response = self.ls_client.create_checkout(
-                store_id=self.store_id,
-                variant_id=plan['variant_id'],
-                checkout_data=checkout_data
-            )
-            
-            if response and 'data' in response:
-                checkout_url = response['data']['attributes']['url']
-                app.logger.info(f"Checkout session created successfully: {checkout_url}")
-                return checkout_url
-            else:
-                app.logger.error("Invalid response from Lemon Squeezy API")
-                if response:
-                    app.logger.error(f"Response: {response}")
-                return None
-        except Exception as e:
-            app.logger.error(f"Error creating checkout session: {str(e)}")
-            raise
     def create_customer_portal_url(self, customer_id, return_url=None):
         """
         Create a customer portal URL for managing subscriptions
@@ -184,7 +154,6 @@ class LemonSqueezyClient:
         except Exception as e:
             print(f"Exception creating customer portal: {str(e)}")
             return None
-
 
 
 class SubscriptionManager:
@@ -230,6 +199,15 @@ class SubscriptionManager:
                         self.supabase.table('subscriptions').update({'status': 'expired'}).eq('id', subscription['id']).execute()
                         return None
                 
+                # Enrich the subscription with plan details
+                plan_id = subscription.get('plan_id')
+                for plan_key, plan_info in self.PLANS.items():
+                    if plan_info['variant_id'] == plan_id:
+                        subscription['plan_name'] = plan_info['name']
+                        subscription['plan_key'] = plan_key
+                        subscription['features'] = plan_info['features']
+                        break
+                
                 return subscription
             return None
         except Exception as e:
@@ -238,10 +216,24 @@ class SubscriptionManager:
     
     def create_checkout_session(self, user_id, email, plan_id, success_url, cancel_url):
         """Create a checkout session for a subscription"""
+        if not user_id or not email:
+            current_app.logger.error("Missing required parameters for checkout session")
+            raise ValueError("User ID and email are required")
+            
         if plan_id not in self.PLANS:
+            current_app.logger.error(f"Invalid plan ID: {plan_id}")
             raise ValueError(f"Invalid plan ID: {plan_id}")
         
         plan = self.PLANS[plan_id]
+        
+        if not plan.get('variant_id'):
+            current_app.logger.error(f"Missing variant ID for plan: {plan_id}")
+            raise ValueError(f"Plan configuration error: missing variant ID")
+        
+        if not self.store_id:
+            current_app.logger.error("Missing store ID in subscription manager")
+            raise ValueError("Subscription manager configuration error: missing store ID")
+        
         checkout_data = {
             "email": email,
             "custom": {
@@ -251,15 +243,27 @@ class SubscriptionManager:
             "cancel_url": cancel_url
         }
         
-        response = self.ls_client.create_checkout(
-            store_id=self.store_id,
-            variant_id=plan['variant_id'],
-            checkout_data=checkout_data
-        )
+        current_app.logger.info(f"Creating checkout session for user {user_id}, plan {plan_id}")
         
-        if response and 'data' in response:
-            return response['data']['attributes']['url']
-        return None
+        try:
+            response = self.ls_client.create_checkout(
+                store_id=self.store_id,
+                variant_id=plan['variant_id'],
+                checkout_data=checkout_data
+            )
+            
+            if response and 'data' in response:
+                checkout_url = response['data']['attributes']['url']
+                current_app.logger.info(f"Checkout session created successfully: {checkout_url}")
+                return checkout_url
+            else:
+                current_app.logger.error("Invalid response from Lemon Squeezy API")
+                if response:
+                    current_app.logger.error(f"Response: {response}")
+                return None
+        except Exception as e:
+            current_app.logger.error(f"Error creating checkout session: {str(e)}")
+            raise
     
     def process_webhook(self, payload, signature):
         """Process webhook from Lemon Squeezy"""
@@ -436,12 +440,16 @@ def subscription_required(plan_levels=None):
         return wrapped_view
     return decorator
 
+# Singleton instance
+_subscription_manager_instance = None
+
 # Helper function to get subscription manager instance
 def get_subscription_manager():
     """Get or create a SubscriptionManager instance"""
-    from app import supabase  # Import here to avoid circular imports
+    global _subscription_manager_instance
     
-    if not hasattr(get_subscription_manager, 'instance'):
-        get_subscription_manager.instance = SubscriptionManager(supabase)
+    if _subscription_manager_instance is None:
+        from app import supabase  # Import here to avoid circular imports
+        _subscription_manager_instance = SubscriptionManager(supabase)
     
-    return get_subscription_manager.instance
+    return _subscription_manager_instance

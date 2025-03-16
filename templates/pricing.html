@@ -182,20 +182,33 @@
                         <li><i class="fas fa-times feature-cross"></i> Custom integrations</li>
                     </ul>
                     
+                    <!-- Add this to your pricing.html template -->
+                    <!-- This is for the Starter plan section -->
                     <div class="d-grid gap-2 mt-4">
                         {% if current_subscription and current_subscription.plan_id == plans.starter.variant_id %}
                             <div class="current-plan-badge">Current Plan</div>
                             <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">Manage Subscription</a>
                         {% else %}
-                            <a href="{{ url_for('subscription.subscribe', plan_id='starter') }}" class="btn btn-primary">
+                            <a href="{{ url_for('subscription.subscribe', plan_id='starter') }}" class="btn btn-primary mb-2">
                                 {% if current_subscription %}
                                     Switch Plan
                                 {% else %}
                                     Start Free Trial
                                 {% endif %}
                             </a>
+                            
+                            <!-- Add this direct checkout button -->
+                            <a href="https://corouted.lemonsqueezy.com/buy/6e99d986-7f2a-4f05-b808-70b71d5e04a9" class="btn btn-outline-primary">
+                                {% if current_subscription %}
+                                    Switch Plan (Direct Link)
+                                {% else %}
+                                    Start Free Trial (Direct Link)
+                                {% endif %}
+                            </a>
                         {% endif %}
                     </div>
+
+                    <!-- Update the other plan sections similarly -->
                 </div>
             </div>
         </div>

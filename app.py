@@ -12,7 +12,7 @@ import math
 import copy
 from flask_cors import CORS
 from supabase import create_client
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 import os
 from dotenv import load_dotenv
@@ -36,14 +36,29 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = SESSION_SECRET
-CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
-
+app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET', 'cvrp-secret-key')  # Make sure to set a strong secret in production
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Session lasts 30 days
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'  # Only send cookies over HTTPS in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to cookies
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Restrict cookie to same site
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
 # Configure authentication middleware
 app = configure_auth_middleware(app)
 app.register_blueprint(subscription_bp)
-
+@app.route('/test-session')
+def test_session():
+    if 'visits' in session:
+        session['visits'] = session.get('visits') + 1
+    else:
+        session['visits'] = 1
+    
+    return jsonify({
+        'success': True, 
+        'message': f'Session is working! You have visited this page {session["visits"]} times.',
+        'session_data': {k: str(v) for k, v in session.items()}  # Convert all values to strings for JSON
+    })
 # Global storage for ongoing solver jobs
 solver_jobs = {}
 @app.before_request
@@ -148,24 +163,34 @@ def login():
             
             if response.user:
                 # Store session data
-                session['user'] = {
-                    'id': response.user.id,
-                    'email': response.user.email,
-                    'access_token': response.session.access_token,
-                    'refresh_token': response.session.refresh_token
-                }
-                
-                # Check if there's a next URL to redirect to
-                next_url = session.pop('next_url', None)
-                if next_url:
-                    return redirect(next_url)
+                try:
+                    session.clear()  # Clear any existing session data
+                    session['user'] = {
+                        'id': response.user.id,
+                        'email': response.user.email,
+                        'access_token': response.session.access_token,
+                        'refresh_token': response.session.refresh_token
+                    }
+                    # Test that session data was stored successfully
+                    if 'user' not in session:
+                        app.logger.error("Failed to store user data in session")
+                        return render_template('login.html', error="Session storage failed. Please try again.")
                     
-                return redirect(url_for('dashboard'))
+                    # Check if there's a next URL to redirect to
+                    next_url = session.pop('next_url', None)
+                    if next_url:
+                        return redirect(next_url)
+                        
+                    return redirect(url_for('dashboard'))
+                except Exception as e:
+                    app.logger.error(f"Session error: {str(e)}")
+                    return render_template('login.html', error=f"Session error: {str(e)}")
             else:
                 return render_template('login.html', error="Login failed. Please check your credentials.")
                 
         except Exception as e:
             error_message = str(e)
+            app.logger.error(f"Login error: {error_message}")
             if "Invalid login credentials" in error_message:
                 return render_template('login.html', error="Invalid email or password. Please try again.")
             else:
@@ -189,7 +214,78 @@ def logout():
     
     flash('You have been successfully logged out', 'info')
     return redirect(url_for('landing'))
-
+@app.route('/debug-checkout/<plan_id>')
+def debug_checkout(plan_id):
+    """Debug route to check checkout session creation"""
+    # Check if user is logged in
+    if 'user' not in session:
+        return jsonify({
+            'success': False, 
+            'error': 'Not logged in',
+            'session_data': str(session)
+        })
+    
+    try:
+        # Get subscription manager
+        subscription_manager = get_subscription_manager()
+        
+        # Check if the plan exists
+        if plan_id not in subscription_manager.PLANS:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid plan ID',
+                'available_plans': list(subscription_manager.PLANS.keys())
+            })
+        
+        # Get environment variables status
+        env_status = {
+            'LEMON_SQUEEZY_API_KEY': bool(os.getenv('LEMON_SQUEEZY_API_KEY')),
+            'LEMON_SQUEEZY_STORE_ID': bool(os.getenv('LEMON_SQUEEZY_STORE_ID')),
+            'SESSION_SECRET': bool(os.getenv('SESSION_SECRET')),
+            'SUPABASE_URL': bool(os.getenv('SUPABASE_URL')),
+            'SUPABASE_KEY': bool(os.getenv('SUPABASE_KEY'))
+        }
+        
+        # Get user data
+        user = session.get('user', {})
+        
+        # Check if we have all required data
+        if not user.get('id') or not user.get('email'):
+            return jsonify({
+                'success': False,
+                'error': 'Missing user data',
+                'user_data': {
+                    'id': bool(user.get('id')),
+                    'email': bool(user.get('email'))
+                }
+            })
+        
+        # Create success and cancel URLs
+        success_url = url_for('subscription.success', _external=True)
+        cancel_url = url_for('subscription.pricing', _external=True)
+        
+        # Return debug info
+        return jsonify({
+            'success': True,
+            'message': 'Debug info for checkout session',
+            'plan_id': plan_id,
+            'plan_info': subscription_manager.PLANS.get(plan_id),
+            'user_id': user.get('id'),
+            'user_email': user.get('email'),
+            'environment_vars': env_status,
+            'urls': {
+                'success_url': success_url,
+                'cancel_url': cancel_url
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Debug checkout error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':

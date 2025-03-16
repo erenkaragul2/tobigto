@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify, current_app
 import os
 import hmac
 import hashlib
@@ -40,37 +40,58 @@ def subscribe(plan_id):
         flash('Please log in to subscribe', 'warning')
         return redirect(url_for('login', next=request.url))
     
-    subscription_manager = get_subscription_manager()
-    
-    # Check if the plan exists
-    if plan_id not in subscription_manager.PLANS:
-        flash('Invalid subscription plan', 'danger')
+    try:
+        subscription_manager = get_subscription_manager()
+        current_app.logger.info(f"Starting checkout process for plan: {plan_id}")
+        
+        # Check if the plan exists
+        if plan_id not in subscription_manager.PLANS:
+            current_app.logger.error(f"Invalid plan ID: {plan_id}")
+            flash('Invalid subscription plan', 'danger')
+            return redirect(url_for('subscription.pricing'))
+        
+        # Check if user already has an active subscription
+        current_subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        if current_subscription:
+            current_app.logger.info(f"User already has subscription: {current_subscription}")
+            flash('You already have an active subscription', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        # Create a checkout session
+        success_url = url_for('subscription.success', _external=True)
+        cancel_url = url_for('subscription.pricing', _external=True)
+        
+        current_app.logger.info(f"Creating checkout session with: plan={plan_id}, user_id={session['user']['id']}, email={session['user']['email']}")
+        
+        try:
+            checkout_url = subscription_manager.create_checkout_session(
+                user_id=session['user']['id'],
+                email=session['user']['email'],
+                plan_id=plan_id,
+                success_url=success_url,
+                cancel_url=cancel_url
+            )
+            
+            if not checkout_url:
+                current_app.logger.error("Checkout URL creation failed - returned None")
+                flash('Failed to create checkout session. Please try the direct link instead.', 'danger')
+                return redirect(url_for('subscription.pricing'))
+            
+            current_app.logger.info(f"Successfully created checkout URL: {checkout_url}")
+            # Redirect to the checkout page
+            return redirect(checkout_url)
+            
+        except Exception as checkout_error:
+            current_app.logger.error(f"Error creating checkout session: {str(checkout_error)}")
+            current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+            flash(f'Error creating checkout: {str(checkout_error)}', 'danger')
+            return redirect(url_for('subscription.pricing'))
+        
+    except Exception as e:
+        current_app.logger.error(f"General error in subscribe route: {str(e)}")
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+        flash(f'Error: {str(e)}', 'danger')
         return redirect(url_for('subscription.pricing'))
-    
-    # Check if user already has an active subscription
-    current_subscription = subscription_manager.get_user_subscription(session['user']['id'])
-    if current_subscription:
-        flash('You already have an active subscription', 'warning')
-        return redirect(url_for('dashboard'))
-    
-    # Create a checkout session
-    success_url = url_for('subscription.success', _external=True)
-    cancel_url = url_for('subscription.pricing', _external=True)
-    
-    checkout_url = subscription_manager.create_checkout_session(
-        user_id=session['user']['id'],
-        email=session['user']['email'],
-        plan_id=plan_id,
-        success_url=success_url,
-        cancel_url=cancel_url
-    )
-    
-    if not checkout_url:
-        flash('Failed to create checkout session', 'danger')
-        return redirect(url_for('subscription.pricing'))
-    
-    # Redirect to the checkout page
-    return redirect(checkout_url)
 
 @subscription_bp.route('/subscription/success')
 def success():
@@ -135,24 +156,24 @@ def portal():
 
 @subscription_bp.route('/webhooks/lemon-squeezy', methods=['POST'])
 def lemon_squeezy_webhook():
-    """Handle webhooks from Lemon Squeezy with improved security corouted.vercel.app/webhooks/lemon-squeezy"""
+    """Handle webhooks from Lemon Squeezy with improved security"""
     # Get the webhook signature
     signature = request.headers.get('X-Signature')
     
     if not signature:
-        app.logger.warning("Missing webhook signature")
+        current_app.logger.warning("Missing webhook signature")
         return jsonify({'success': False, 'error': 'Missing signature'}), 400
     
     # Get the raw request body
     request_data = request.get_data()
     if not request_data:
-        app.logger.warning("Empty webhook payload")
+        current_app.logger.warning("Empty webhook payload")
         return jsonify({'success': False, 'error': 'Empty payload'}), 400
     
     # Get the webhook secret from environment
     webhook_secret = os.getenv('LEMON_SQUEEZY_WEBHOOK_SECRET')
     if not webhook_secret:
-        app.logger.error("LEMON_SQUEEZY_WEBHOOK_SECRET not configured")
+        current_app.logger.error("LEMON_SQUEEZY_WEBHOOK_SECRET not configured")
         return jsonify({'success': False, 'error': 'Server configuration error'}), 500
     
     # Verify the signature
@@ -164,34 +185,34 @@ def lemon_squeezy_webhook():
     
     # Use constant time comparison to prevent timing attacks
     if not hmac.compare_digest(computed_signature, signature):
-        app.logger.warning("Invalid webhook signature")
+        current_app.logger.warning("Invalid webhook signature")
         return jsonify({'success': False, 'error': 'Invalid signature'}), 403
     
     # Parse JSON payload
     try:
         payload = request.json
     except Exception as e:
-        app.logger.error(f"Invalid JSON payload: {str(e)}")
+        current_app.logger.error(f"Invalid JSON payload: {str(e)}")
         return jsonify({'success': False, 'error': 'Invalid JSON'}), 400
     
     # Validate the payload has the expected structure
     if not payload or 'meta' not in payload or 'event_name' not in payload['meta']:
-        app.logger.warning("Malformed webhook payload")
+        current_app.logger.warning("Malformed webhook payload")
         return jsonify({'success': False, 'error': 'Malformed payload'}), 400
     
     # Log the webhook event for debugging
     event_name = payload['meta']['event_name']
-    app.logger.info(f"Processing Lemon Squeezy webhook: {event_name}")
+    current_app.logger.info(f"Processing Lemon Squeezy webhook: {event_name}")
     
     # Process the webhook
     subscription_manager = get_subscription_manager()
     success = subscription_manager.process_webhook(payload)
     
     if success:
-        app.logger.info(f"Successfully processed webhook: {event_name}")
+        current_app.logger.info(f"Successfully processed webhook: {event_name}")
         return jsonify({'success': True}), 200
     else:
-        app.logger.error(f"Failed to process webhook: {event_name}")
+        current_app.logger.error(f"Failed to process webhook: {event_name}")
         return jsonify({'success': False, 'error': 'Failed to process webhook'}), 500
 
 @subscription_bp.route('/subscription/status')
