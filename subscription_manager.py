@@ -278,13 +278,14 @@ class SubscriptionManager:
             raise
     
     # Replace the process_webhook method in subscription_manager.py
+    # Update this method in subscription_manager.py to ensure it always returns complete data
     def get_user_usage(self, user_id):
         """
-        Get usage statistics for a user
+        Get usage statistics for a user with proper error handling
         
         Args:
             user_id: The user ID
-            
+                
         Returns:
             dict: Usage statistics including routes created this month
         """

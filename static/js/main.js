@@ -241,29 +241,44 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to upload a file
     function uploadFile() {
-        if (!ui.fileInput.files.length) {
+        console.log("Upload function called");
+        
+        // Check if file input exists and has files
+        if (!ui.fileInput || !ui.fileInput.files || !ui.fileInput.files.length) {
             showAlert(ui.dataPreviewContainer, 'Please select a file to upload', 'danger');
             return;
         }
-
+    
         const file = ui.fileInput.files[0];
+        console.log("Selected file:", file.name);
+        
+        // Create FormData object and append the file
         const formData = new FormData();
         formData.append('file', file);
-
+    
         // Show loading state
-        showAlert(ui.dataPreviewContainer, 'Uploading file...', 'info');
+        showAlert(ui.dataPreviewContainer, 'Uploading and processing file...', 'info');
         ui.uploadBtn.disabled = true;
         ui.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
-
+        
+        console.log("Sending fetch request to /upload");
+        
+        // Send the request
         fetch('/upload', {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log("Received response", response.status);
+            return response.json();
+        })
         .then(data => {
+            console.log("Processed response data:", data);
+            
+            // Reset button state
             ui.uploadBtn.disabled = false;
             ui.uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload and Process';
-
+    
             if (data.success) {
                 appState.dataLoaded = true;
                 // Show data preview
@@ -272,11 +287,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateUIState();
                 // Show success message
                 showAlert(ui.dataPreviewContainer, data.message, 'success', false);
+                
+                // Enable process data button
+                ui.processDataBtn.disabled = false;
+                
+                // Enable configuration tab
+                ui.dataTabs.config.classList.remove('disabled');
             } else {
-                showAlert(ui.dataPreviewContainer, data.error, 'danger');
+                showAlert(ui.dataPreviewContainer, data.error || 'Unknown error during upload', 'danger');
             }
         })
         .catch(error => {
+            console.error("Upload error:", error);
+            
             ui.uploadBtn.disabled = false;
             ui.uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload and Process';
             showAlert(ui.dataPreviewContainer, 'Error uploading file: ' + error, 'danger');
@@ -1488,6 +1511,44 @@ let subscriptionInfo = {
         });
       };
     }
+    document.addEventListener('DOMContentLoaded', function() {
+        // Ensure all UI elements are properly referenced
+        console.log("Checking UI element references...");
+        
+        // Critical elements for file upload
+        const criticalElements = [
+            { name: 'fileInput', id: 'fileInput' },
+            { name: 'uploadBtn', id: 'uploadBtn' },
+            { name: 'dataPreviewContainer', id: 'dataPreviewContainer' }
+        ];
+        
+        // Check each critical element
+        criticalElements.forEach(elem => {
+            if (!ui[elem.name] || ui[elem.name] === null) {
+                console.log(`Element ${elem.name} was not found in ui object. Trying to find it in DOM...`);
+                ui[elem.name] = document.getElementById(elem.id);
+                
+                if (ui[elem.name]) {
+                    console.log(`Found and fixed reference to ${elem.name}`);
+                } else {
+                    console.error(`CRITICAL: Could not find element with id ${elem.id} in the DOM`);
+                }
+            } else {
+                console.log(`Element ${elem.name} reference is OK`);
+            }
+        });
+        
+        // Re-attach event listener for upload button to be safe
+        if (ui.uploadBtn) {
+            console.log("Re-attaching upload button event listener");
+            // Remove existing listeners (in case there are duplicates)
+            ui.uploadBtn.removeEventListener('click', uploadFile);
+            // Add the listener
+            ui.uploadBtn.addEventListener('click', uploadFile);
+        }
+        
+        console.log("UI element reference check complete");
+    });
     
     // Initialize max vehicles input
     updateMaxVehiclesInput();

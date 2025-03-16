@@ -73,7 +73,17 @@ def inject_subscription_data():
     if 'user' in session:
         subscription_manager = get_subscription_manager()
         subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        default_limits = {
+            'max_routes': 5,
+            'max_drivers': 3
+        }
         
+        # Get plan features if subscription exists
+        if subscription:
+            # Initialize with default limits
+            subscription['limits'] = default_limits
+            
+            plan_id = subscription.get('plan_id')
         # Get plan features if subscription exists
         if subscription:
             plan_id = subscription.get('plan_id')
@@ -327,16 +337,42 @@ def dashboard():
     # Get subscription manager to provide limits and usage to the template
     subscription_manager = get_subscription_manager()
     
+    # Default values in case of errors
+    subscription = None
+    routes_used = 0
+    total_routes = 0
+    
     # Fetch any additional user data if needed
     try:
         # Get user's subscription details
         subscription = subscription_manager.get_user_subscription(user['id'])
         
-        # Get usage statistics
-        user_usage = subscription_manager.get_user_usage(user['id'])
-        routes_used = user_usage.get('routes_created', 0)
+        # Ensure subscription has limits
+        if subscription and 'limits' not in subscription:
+            # Get default limits from plans or use trial limits
+            default_limits = {
+                'max_routes': 5,
+                'max_drivers': 3
+            }
+            
+            # Try to find the plan for this subscription
+            plan_id = subscription.get('plan_id')
+            for plan_key, plan_info in subscription_manager.PLANS.items():
+                if plan_info['variant_id'] == plan_id:
+                    default_limits = plan_info['limits']
+                    break
+                    
+            subscription['limits'] = default_limits
         
-        # Get total routes created (all time)
+        # Get usage statistics with proper error handling
+        try:
+            user_usage = subscription_manager.get_user_usage(user['id'])
+            routes_used = user_usage.get('routes_created', 0)
+        except Exception as e:
+            print(f"Error getting user usage: {str(e)}")
+            routes_used = 0
+        
+        # Get total routes created (all time) with proper error handling
         try:
             response = supabase.table('usage_tracking').select('routes_created').eq('user_id', user['id']).execute()
             total_routes = sum(item.get('routes_created', 0) for item in response.data) if response.data else 0
@@ -345,10 +381,15 @@ def dashboard():
             total_routes = 0
             
     except Exception as e:
-        flash(f"Error loading subscription data: {str(e)}", "warning")
-        subscription = None
-        routes_used = 0
-        total_routes = 0
+        import traceback
+        print(f"Error loading subscription data: {str(e)}")
+        print(traceback.format_exc())
+        flash(f"Error loading subscription data. Please try refreshing the page.", "warning")
+    
+    # Print debug information
+    print(f"Dashboard data: user_id={user['id']}, routes_used={routes_used}, total_routes={total_routes}")
+    if subscription:
+        print(f"Subscription: {subscription}")
     
     return render_template('dashboard.html', 
                           user=user, 

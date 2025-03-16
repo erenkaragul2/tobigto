@@ -121,9 +121,9 @@
                     {% if subscription %}
                         <div class="row">
                             <div class="col-md-6">
-                                <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name }}</span></h5>
+                                <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name|default('Trial') }}</span></h5>
                                 <p class="text-muted">
-                                    Your subscription is currently <strong>{{ subscription.status }}</strong>
+                                    Your subscription is currently <strong>{{ subscription.status|default('active') }}</strong>
                                     {% if subscription.current_period_end %}
                                         and will renew on {{ subscription.current_period_end|date }}
                                     {% endif %}
@@ -141,9 +141,15 @@
                                 <div class="alert alert-info">
                                     <h6>Plan Features:</h6>
                                     <ul class="mb-0">
-                                        {% for feature in subscription.features %}
-                                            <li>{{ feature }}</li>
-                                        {% endfor %}
+                                        {% if subscription.features %}
+                                            {% for feature in subscription.features %}
+                                                <li>{{ feature }}</li>
+                                            {% endfor %}
+                                        {% else %}
+                                            <li>Basic route optimization</li>
+                                            <li>Up to 5 routes per month</li>
+                                            <li>Up to 3 drivers</li>
+                                        {% endif %}
                                     </ul>
                                 </div>
                             </div>
@@ -168,48 +174,56 @@
         
         <div class="col-md-4">
             <!-- Add this section to templates/dashboard.html -->
-<!-- Replace the existing "Usage Stats" section -->
+            <!-- Replace the existing "Usage Stats" section -->
 
             <div class="card">
                 <div class="card-header">
                     <h4><i class="fas fa-chart-line me-2"></i>Usage Stats</h4>
                 </div>
                 <div class="card-body">
-                    {% if subscription %}
+                    {% if subscription and subscription.get('limits') %}
                         <div class="mb-3">
                             <h5>Routes Created This Month</h5>
+                            {% set max_routes = subscription.limits.get('max_routes', 5) %}
+                            {% set percentage = ((routes_used|default(0) / max_routes) * 100)|round|int if max_routes > 0 else 0 %}
+                            {% set percentage = percentage if percentage <= 100 else 100 %}
+                            
                             <div class="d-flex justify-content-between mb-1">
-                                <span>{{ routes_used|default(0) }} of {{ subscription.limits.max_routes }}</span>
-                                <span class="text-muted">{{ ((routes_used|default(0) / subscription.limits.max_routes) * 100)|round|int }}%</span>
+                                <span>{{ routes_used|default(0) }} of {{ max_routes }}</span>
+                                <span class="text-muted">{{ percentage }}%</span>
                             </div>
                             <div class="progress">
                                 <div class="progress-bar bg-primary" role="progressbar" 
-                                    style="width: {{ ((routes_used|default(0) / subscription.limits.max_routes) * 100)|round|int }}%;" 
+                                    style="width: {{ percentage }}%;" 
                                     aria-valuenow="{{ routes_used|default(0) }}" 
                                     aria-valuemin="0" 
-                                    aria-valuemax="{{ subscription.limits.max_routes }}">
+                                    aria-valuemax="{{ max_routes }}">
                                 </div>
                             </div>
                         </div>
                         
                         <div class="mb-3">
                             <h5>Driver Limit</h5>
-                            <h2 class="text-primary">{{ subscription.limits.max_drivers }}</h2>
+                            <h2 class="text-primary">{{ subscription.limits.get('max_drivers', 3) }}</h2>
                             <small class="text-muted">Maximum drivers available on your plan</small>
                         </div>
                     {% else %}
                         <div class="mb-3">
                             <h5>Routes Created (Trial)</h5>
+                            {% set max_trial_routes = 5 %}
+                            {% set percentage = ((routes_used|default(0) / max_trial_routes) * 100)|round|int %}
+                            {% set percentage = percentage if percentage <= 100 else 100 %}
+                            
                             <div class="d-flex justify-content-between mb-1">
-                                <span>{{ routes_used|default(0) }} of 5</span>
-                                <span class="text-muted">{{ ((routes_used|default(0) / 5) * 100)|round|int }}%</span>
+                                <span>{{ routes_used|default(0) }} of {{ max_trial_routes }}</span>
+                                <span class="text-muted">{{ percentage }}%</span>
                             </div>
                             <div class="progress">
                                 <div class="progress-bar bg-warning" role="progressbar" 
-                                    style="width: {{ ((routes_used|default(0) / 5) * 100)|round|int }}%;" 
+                                    style="width: {{ percentage }}%;" 
                                     aria-valuenow="{{ routes_used|default(0) }}" 
                                     aria-valuemin="0" 
-                                    aria-valuemax="5">
+                                    aria-valuemax="{{ max_trial_routes }}">
                                 </div>
                             </div>
                             <div class="mt-2 text-muted">
@@ -225,8 +239,9 @@
                     {% endif %}
                     
                     <div class="mb-3">
-                        <h5>Routes Created</h5>
+                        <h5>Total Routes Created</h5>
                         <h2 class="text-primary">{{ total_routes|default(0) }}</h2>
+                        <small class="text-muted">All-time total across your account</small>
                     </div>
                 </div>
                 <div class="card-footer">
