@@ -21,6 +21,8 @@ from auth_middleware import login_required, admin_required, configure_auth_middl
 from subscription_manager import subscription_required, get_subscription_manager
 from subscription_routes import subscription_bp
 from trial_middleware import configure_trial_middleware
+from usage_limits import route_limit_required, driver_limit_check
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -309,17 +311,37 @@ def dashboard():
     # User object is already checked in the login_required decorator
     user = session['user']
     
+    # Get subscription manager to provide limits and usage to the template
+    subscription_manager = get_subscription_manager()
+    
     # Fetch any additional user data if needed
     try:
-        # Example: fetch user profile data
-        user_id = user['id']
-        # Fetch user profile from database if needed
-        # profile = supabase.table('profiles').select('*').eq('user_id', user_id).execute()
-        # Additional user data can be passed to the template
+        # Get user's subscription details
+        subscription = subscription_manager.get_user_subscription(user['id'])
+        
+        # Get usage statistics
+        user_usage = subscription_manager.get_user_usage(user['id'])
+        routes_used = user_usage.get('routes_created', 0)
+        
+        # Get total routes created (all time)
+        try:
+            response = supabase.table('usage_tracking').select('routes_created').eq('user_id', user['id']).execute()
+            total_routes = sum(item.get('routes_created', 0) for item in response.data) if response.data else 0
+        except Exception as e:
+            print(f"Error getting total routes: {str(e)}")
+            total_routes = 0
+            
     except Exception as e:
-        flash(f"Error loading profile data: {str(e)}", "warning")
+        flash(f"Error loading subscription data: {str(e)}", "warning")
+        subscription = None
+        routes_used = 0
+        total_routes = 0
     
-    return render_template('dashboard.html', user=user)
+    return render_template('dashboard.html', 
+                          user=user, 
+                          subscription=subscription,
+                          routes_used=routes_used,
+                          total_routes=total_routes)
 
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -470,6 +492,18 @@ def generate_random():
         params = request.get_json()
         num_nodes = int(params.get('num_nodes', 10))
         depot = int(params.get('depot', 0))
+        max_vehicles = int(params.get('max_vehicles', 5))
+        
+        # Check driver limit
+        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, session['user']['id'])
+        
+        if not is_allowed:
+            return jsonify({
+                'success': False, 
+                'error': error_message,
+                'limit_exceeded': True,
+                'max_allowed': max_allowed
+            })
         
         if depot < 0 or depot >= num_nodes:
             return jsonify({'success': False, 'error': 'Depot index must be between 0 and num_nodes-1'})
@@ -500,8 +534,13 @@ def generate_random():
             'company_names': company_names,
             'depot': depot,
             'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
-            'max_vehicles': int(params.get('max_vehicles', 5)),
+            'max_vehicles': max_vehicles,  # Use the checked max_vehicles value
         }
+        
+        # Get subscription manager to provide limits to the frontend
+        subscription_manager = get_subscription_manager()
+        user_limits = subscription_manager.get_user_limits(session['user']['id'])
+        user_usage = subscription_manager.get_user_usage(session['user']['id'])
         
         return jsonify({
             'success': True,
@@ -511,9 +550,15 @@ def generate_random():
             'demands': demands,
             'company_names': company_names,
             'distanceMatrixPreview': [
-            [f"{val:.2f}" for val in row] 
-            for row in distance_matrix
-            ]
+                [f"{val:.2f}" for val in row] 
+                for row in distance_matrix
+            ],
+            'subscription': {
+                'max_routes': user_limits.get('max_routes'),
+                'max_drivers': user_limits.get('max_drivers'),
+                'routes_used': user_usage.get('routes_created'),
+                'is_trial': user_limits.get('is_trial', False)
+            }
         })
     
     except Exception as e:
@@ -528,6 +573,18 @@ def process_data():
     try:
         # Get parameters from request
         params = request.get_json()
+        
+        # Get max_vehicles parameter and check limit
+        max_vehicles = int(params.get('max_vehicles', 5))
+        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, session['user']['id'])
+        
+        if not is_allowed:
+            return jsonify({
+                'success': False, 
+                'error': error_message,
+                'limit_exceeded': True,
+                'max_allowed': max_allowed
+            })
         
         # Read dataframe from session
         data_json = session['data']['dataframe']
@@ -607,9 +664,14 @@ def process_data():
             'company_names': company_names,
             'depot': int(params.get('depot', 0)),
             'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
-            'max_vehicles': int(params.get('max_vehicles', 5)),
+            'max_vehicles': max_vehicles,  # Use the checked max_vehicles value
             'distance_type': distance_type
         }
+        
+        # Get subscription manager to provide limits to the frontend
+        subscription_manager = get_subscription_manager()
+        user_limits = subscription_manager.get_user_limits(session['user']['id'])
+        user_usage = subscription_manager.get_user_usage(session['user']['id'])
         
         return jsonify({
             'success': True,
@@ -619,7 +681,13 @@ def process_data():
             'distanceMatrixPreview': [
                 [f"{val:.2f}" for val in row[:5]] 
                 for row in distance_matrix[:5]
-            ]
+            ],
+            'subscription': {
+                'max_routes': user_limits.get('max_routes'),
+                'max_drivers': user_limits.get('max_drivers'),
+                'routes_used': user_usage.get('routes_created'),
+                'is_trial': user_limits.get('is_trial', False)
+            }
         })
         
     except Exception as e:
@@ -658,6 +726,7 @@ def get_distance_matrix():
 
 @app.route('/solve', methods=['POST'])
 @login_required
+@route_limit_required  # Add this decorator to check route limits
 def solve():
     if 'problem_data' not in session:
         return jsonify({'success': False, 'error': 'No problem data available'})
@@ -666,6 +735,18 @@ def solve():
         # Get algorithm parameters
         params = request.get_json()
         problem_data = session['problem_data']
+        
+        # Check if the max_vehicles exceeds the user's subscription limit
+        max_vehicles = int(params.get('max_vehicles', problem_data.get('max_vehicles', 5)))
+        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, session['user']['id'])
+        
+        if not is_allowed:
+            return jsonify({
+                'success': False, 
+                'error': error_message,
+                'limit_exceeded': True,
+                'max_allowed': max_allowed
+            })
         
         # Create a unique job ID
         job_id = str(uuid.uuid4())
@@ -684,6 +765,10 @@ def solve():
             'updates': [],
             'user_id': user_id  # Associate job with user
         }
+        
+        # Record route creation in usage tracking
+        subscription_manager = get_subscription_manager()
+        subscription_manager.record_route_creation(user_id)
         
         # Start solver in a separate thread
         thread = threading.Thread(

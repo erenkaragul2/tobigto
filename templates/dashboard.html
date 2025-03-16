@@ -110,88 +110,133 @@
                 </div>
             </div>
         </div>
-                <!-- Add this subscription info section to the dashboard.html template -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h4 class="mb-0">Subscription Status</h4>
-                    </div>
-                    <div class="card-body">
-                        {% if subscription %}
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name }}</span></h5>
-                                    <p class="text-muted">
-                                        Your subscription is currently <strong>{{ subscription.status }}</strong>
-                                        {% if subscription.current_period_end %}
-                                            and will renew on {{ subscription.current_period_end|date }}
-                                        {% endif %}
-                                    </p>
-                                    <div class="mt-3">
-                                        <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">
-                                            <i class="fas fa-cog me-2"></i>Manage Subscription
-                                        </a>
-                                        <a href="{{ url_for('subscription.pricing') }}" class="btn btn-outline-secondary ms-2">
-                                            <i class="fas fa-exchange-alt me-2"></i>Change Plan
-                                        </a>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="alert alert-info">
-                                        <h6>Plan Features:</h6>
-                                        <ul class="mb-0">
-                                            {% for feature in subscription.features %}
-                                                <li>{{ feature }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-                        {% else %}
-                            <div class="alert alert-warning mb-0">
-                                <h5 class="alert-heading">No Active Subscription</h5>
-                                <p>You currently don't have an active subscription. Some features may be limited.</p>
-                                <hr>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>Choose a plan to unlock all features</div>
-                                    <a href="{{ url_for('subscription.pricing') }}" class="btn btn-primary">
-                                        <i class="fas fa-tag me-2"></i>View Pricing Plans
+            <!-- Add this subscription info section to the dashboard.html template -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Subscription Status</h4>
+                </div>
+                <div class="card-body">
+                    {% if subscription %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name }}</span></h5>
+                                <p class="text-muted">
+                                    Your subscription is currently <strong>{{ subscription.status }}</strong>
+                                    {% if subscription.current_period_end %}
+                                        and will renew on {{ subscription.current_period_end|date }}
+                                    {% endif %}
+                                </p>
+                                <div class="mt-3">
+                                    <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">
+                                        <i class="fas fa-cog me-2"></i>Manage Subscription
+                                    </a>
+                                    <a href="{{ url_for('subscription.pricing') }}" class="btn btn-outline-secondary ms-2">
+                                        <i class="fas fa-exchange-alt me-2"></i>Change Plan
                                     </a>
                                 </div>
                             </div>
-                        {% endif %}
-                    </div>
+                            <div class="col-md-6">
+                                <div class="alert alert-info">
+                                    <h6>Plan Features:</h6>
+                                    <ul class="mb-0">
+                                        {% for feature in subscription.features %}
+                                            <li>{{ feature }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning mb-0">
+                            <h5 class="alert-heading">No Active Subscription</h5>
+                            <p>You currently don't have an active subscription. Some features may be limited.</p>
+                            <hr>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>Choose a plan to unlock all features</div>
+                                <a href="{{ url_for('subscription.pricing') }}" class="btn btn-primary">
+                                    <i class="fas fa-tag me-2"></i>View Pricing Plans
+                                </a>
+                            </div>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
+    </div>
         
         <div class="col-md-4">
+            <!-- Add this section to templates/dashboard.html -->
+<!-- Replace the existing "Usage Stats" section -->
+
             <div class="card">
                 <div class="card-header">
                     <h4><i class="fas fa-chart-line me-2"></i>Usage Stats</h4>
                 </div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <h5>Optimizations This Month</h5>
-                        <div class="progress">
-                            <div class="progress-bar bg-primary" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">5/20</div>
+                    {% if subscription %}
+                        <div class="mb-3">
+                            <h5>Routes Created This Month</h5>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>{{ routes_used|default(0) }} of {{ subscription.limits.max_routes }}</span>
+                                <span class="text-muted">{{ ((routes_used|default(0) / subscription.limits.max_routes) * 100)|round|int }}%</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-primary" role="progressbar" 
+                                    style="width: {{ ((routes_used|default(0) / subscription.limits.max_routes) * 100)|round|int }}%;" 
+                                    aria-valuenow="{{ routes_used|default(0) }}" 
+                                    aria-valuemin="0" 
+                                    aria-valuemax="{{ subscription.limits.max_routes }}">
+                                </div>
+                            </div>
                         </div>
-                        <small class="text-muted">5 of 20 optimizations used</small>
-                    </div>
+                        
+                        <div class="mb-3">
+                            <h5>Driver Limit</h5>
+                            <h2 class="text-primary">{{ subscription.limits.max_drivers }}</h2>
+                            <small class="text-muted">Maximum drivers available on your plan</small>
+                        </div>
+                    {% else %}
+                        <div class="mb-3">
+                            <h5>Routes Created (Trial)</h5>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>{{ routes_used|default(0) }} of 5</span>
+                                <span class="text-muted">{{ ((routes_used|default(0) / 5) * 100)|round|int }}%</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-warning" role="progressbar" 
+                                    style="width: {{ ((routes_used|default(0) / 5) * 100)|round|int }}%;" 
+                                    aria-valuenow="{{ routes_used|default(0) }}" 
+                                    aria-valuemin="0" 
+                                    aria-valuemax="5">
+                                </div>
+                            </div>
+                            <div class="mt-2 text-muted">
+                                <small><i class="fas fa-info-circle me-1"></i> Upgrade to a paid plan for more routes</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <h5>Driver Limit (Trial)</h5>
+                            <h2 class="text-warning">3</h2>
+                            <small class="text-muted">Maximum drivers available on trial</small>
+                        </div>
+                    {% endif %}
                     
                     <div class="mb-3">
                         <h5>Routes Created</h5>
-                        <h2 class="text-primary">12</h2>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <h5>Distance Optimized</h5>
-                        <h2 class="text-primary">147.3 km</h2>
+                        <h2 class="text-primary">{{ total_routes|default(0) }}</h2>
                     </div>
                 </div>
                 <div class="card-footer">
-                    <a href="#" class="btn btn-sm btn-outline-secondary w-100">View Detailed Analytics</a>
+                    <a href="{{ url_for('subscription.pricing') }}" class="btn btn-sm btn-outline-primary w-100">
+                        {% if subscription %}
+                            View Usage Details
+                        {% else %}
+                            Upgrade for More Resources
+                        {% endif %}
+                    </a>
                 </div>
             </div>
             

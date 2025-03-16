@@ -1317,4 +1317,179 @@ document.addEventListener('DOMContentLoaded', function() {
         container.appendChild(alertDiv);
     }
     enhanceMatrixStyle();
+    // Store subscription information
+let subscriptionInfo = {
+    maxRoutes: 5,  // Default trial value
+    maxDrivers: 3,  // Default trial value
+    routesUsed: 0,
+    isTrial: true
+  };
+  
+  // Update max vehicles input based on subscription
+  function updateMaxVehiclesInput() {
+    const maxVehiclesInput = document.getElementById('maxVehiclesInput');
+    if (maxVehiclesInput) {
+      // Set the max attribute
+      maxVehiclesInput.setAttribute('max', subscriptionInfo.maxDrivers);
+      
+      // If current value exceeds max, update it
+      if (parseInt(maxVehiclesInput.value) > subscriptionInfo.maxDrivers) {
+        maxVehiclesInput.value = subscriptionInfo.maxDrivers;
+      }
+      
+      // Add a hint about the limit
+      const formText = maxVehiclesInput.parentElement.querySelector('.form-text');
+      if (formText) {
+        formText.innerHTML = `Maximum number of vehicles (routes) to use <strong>(limit: ${subscriptionInfo.maxDrivers})</strong>`;
+      }
+    }
+  }
+  
+  // Add a subscription alert section to the config tab
+  function addSubscriptionAlerts() {
+    const configTab = document.getElementById('config');
+    if (!configTab) return;
+    
+    // Create alert for routes remaining
+    const routesAlert = document.createElement('div');
+    routesAlert.className = 'alert alert-info mb-4';
+    routesAlert.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <strong><i class="fas fa-info-circle me-2"></i>Route Usage</strong>
+          <div>You have used ${subscriptionInfo.routesUsed} of ${subscriptionInfo.maxRoutes} route creations this billing period.</div>
+        </div>
+        <a href="/pricing" class="btn btn-sm btn-outline-primary">Upgrade Plan</a>
+      </div>
+    `;
+    
+    // Create alert for driver limits
+    const driversAlert = document.createElement('div');
+    driversAlert.className = 'alert alert-info mb-4';
+    driversAlert.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <strong><i class="fas fa-info-circle me-2"></i>Driver Limit</strong>
+          <div>Your plan allows up to ${subscriptionInfo.maxDrivers} drivers per route.</div>
+        </div>
+      </div>
+    `;
+    
+    // Add alerts to the beginning of the config tab
+    configTab.insertBefore(driversAlert, configTab.firstChild);
+    configTab.insertBefore(routesAlert, configTab.firstChild);
+    
+    // If user is on trial, add a trial alert
+    if (subscriptionInfo.isTrial) {
+      const trialAlert = document.createElement('div');
+      trialAlert.className = 'alert alert-warning mb-4';
+      trialAlert.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong><i class="fas fa-clock me-2"></i>Trial Account</strong>
+            <div>You are currently on a trial account with limited features. Upgrade to a paid plan for more routes and drivers.</div>
+          </div>
+          <a href="/pricing" class="btn btn-sm btn-warning">View Plans</a>
+        </div>
+      `;
+      configTab.insertBefore(trialAlert, configTab.firstChild);
+    }
+  }
+  
+  // Handle subscription limits in API responses
+  function handleSubscriptionInfo(data) {
+    if (data && data.subscription) {
+      subscriptionInfo.maxRoutes = data.subscription.max_routes || 5;
+      subscriptionInfo.maxDrivers = data.subscription.max_drivers || 3;
+      subscriptionInfo.routesUsed = data.subscription.routes_used || 0;
+      subscriptionInfo.isTrial = data.subscription.is_trial || false;
+      
+      // Update the UI
+      updateMaxVehiclesInput();
+      addSubscriptionAlerts();
+      
+      console.log('Subscription info updated:', subscriptionInfo);
+    }
+  }
+  
+  // Handle subscription limit errors
+  function handleLimitError(errorResponse) {
+    if (errorResponse && errorResponse.limit_exceeded) {
+      const maxAllowed = errorResponse.max_allowed || 3;
+      const errorMessage = errorResponse.error || `You can only use up to ${maxAllowed} drivers on your current plan.`;
+      
+      // Show error
+      alert(errorMessage);
+      
+      // Update max vehicles input
+      const maxVehiclesInput = document.getElementById('maxVehiclesInput');
+      if (maxVehiclesInput) {
+        maxVehiclesInput.value = maxAllowed;
+      }
+      
+      return true; // Error was handled
+    }
+    
+    if (errorResponse && errorResponse.limit_reached) {
+      const errorMessage = errorResponse.error || 'You have reached your route creation limit for this billing period.';
+      
+      // Show error with option to upgrade
+      if (confirm(`${errorMessage}\n\nWould you like to view upgrade options?`)) {
+        window.location.href = errorResponse.redirect || '/pricing';
+      }
+      
+      return true; // Error was handled
+    }
+    
+    return false; // Error was not handled
+  }
+  
+  // Add event listeners
+  document.addEventListener('DOMContentLoaded', function() {
+    // Modify existing API calls to handle subscription information
+    const originalProcessData = window.processData;
+    if (originalProcessData) {
+      window.processData = function() {
+        return originalProcessData().then(function(data) {
+          if (data && data.success) {
+            handleSubscriptionInfo(data);
+          } else if (data && !data.success) {
+            handleLimitError(data);
+          }
+          return data;
+        });
+      };
+    }
+    
+    const originalGenerateRandom = window.generateRandomProblem;
+    if (originalGenerateRandom) {
+      window.generateRandomProblem = function() {
+        return originalGenerateRandom().then(function(data) {
+          if (data && data.success) {
+            handleSubscriptionInfo(data);
+          } else if (data && !data.success) {
+            handleLimitError(data);
+          }
+          return data;
+        });
+      };
+    }
+    
+    const originalSolveProblem = window.solveProblem;
+    if (originalSolveProblem) {
+      window.solveProblem = function() {
+        return originalSolveProblem().then(function(data) {
+          if (data && !data.success) {
+            if (handleLimitError(data)) {
+              throw new Error('Subscription limit reached');
+            }
+          }
+          return data;
+        });
+      };
+    }
+    
+    // Initialize max vehicles input
+    updateMaxVehiclesInput();
+  });
 });

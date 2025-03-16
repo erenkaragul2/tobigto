@@ -163,20 +163,32 @@ class SubscriptionManager:
     PLANS = {
         'starter': {
             'name': 'Starter',
-            'variant_id': '727207',  # Replace with your variant ID
-            'features': ['5 vehicles', 'Basic route optimization', 'Email support']
+            'variant_id': '727207',  # Your variant ID
+            'features': ['8 drivers', 'Up to 25 routes per month', 'Basic route optimization', 'Email support'],
+            'limits': {
+                'max_routes': 25,
+                'max_drivers': 8
+            }
         },
         'professional': {
             'name': 'Professional',
-            'variant_id': '727230',  # Replace with your variant ID
-            'features': ['20 vehicles', 'Advanced route optimization', 'Priority support']
+            'variant_id': '727230',  # Your variant ID
+            'features': ['15 drivers', 'Up to 55 routes per month', 'Advanced route optimization', 'Priority support'],
+            'limits': {
+                'max_routes': 55,
+                'max_drivers': 15
+            }
         },
         'enterprise': {
             'name': 'Enterprise',
-            'variant_id': '727232',  # Replace with your variant ID
-            'features': ['Unlimited vehicles', 'Premium features', '24/7 support']
+            'variant_id': '727232',  # Your variant ID
+            'features': ['24 drivers', 'Up to 120 routes per month', 'Premium features', '24/7 support'],
+            'limits': {
+                'max_routes': 120,
+                'max_drivers': 24
+            }
         }
-    }
+    }   
     
     def __init__(self, supabase_client):
         self.supabase = supabase_client
