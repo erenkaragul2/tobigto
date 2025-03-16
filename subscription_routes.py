@@ -112,44 +112,86 @@ def portal():
         flash('You don\'t have an active subscription', 'warning')
         return redirect(url_for('subscription.pricing'))
     
-    # For Lemon Squeezy, you'll need to implement a customer portal URL generation
-    # This would typically involve creating a customer portal link via the Lemon Squeezy API
-    # For now, we'll redirect to a placeholder
-    flash('Customer portal functionality will be implemented soon', 'info')
-    return redirect(url_for('dashboard'))
+    # Get customer ID from subscription
+    customer_id = subscription.get('customer_id')
+    if not customer_id:
+        flash('Unable to access customer portal: Missing customer ID', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Create return URL (where to redirect after customer actions)
+    return_url = url_for('dashboard', _external=True)
+    
+    # Generate customer portal URL
+    portal_url = subscription_manager.ls_client.create_customer_portal_url(
+        customer_id=customer_id, 
+        return_url=return_url
+    )
+    
+    if portal_url:
+        return redirect(portal_url)
+    else:
+        flash('Unable to generate customer portal link. Please try again later.', 'danger')
+        return redirect(url_for('dashboard'))
 
 @subscription_bp.route('/webhooks/lemon-squeezy', methods=['POST'])
 def lemon_squeezy_webhook():
-    """Handle webhooks from Lemon Squeezy"""
+    """Handle webhooks from Lemon Squeezy with improved security"""
     # Get the webhook signature
     signature = request.headers.get('X-Signature')
     
     if not signature:
+        app.logger.warning("Missing webhook signature")
         return jsonify({'success': False, 'error': 'Missing signature'}), 400
     
-    # Get the webhook payload
-    payload = request.json
+    # Get the raw request body
+    request_data = request.get_data()
+    if not request_data:
+        app.logger.warning("Empty webhook payload")
+        return jsonify({'success': False, 'error': 'Empty payload'}), 400
     
     # Get the webhook secret from environment
     webhook_secret = os.getenv('LEMON_SQUEEZY_WEBHOOK_SECRET')
+    if not webhook_secret:
+        app.logger.error("LEMON_SQUEEZY_WEBHOOK_SECRET not configured")
+        return jsonify({'success': False, 'error': 'Server configuration error'}), 500
     
     # Verify the signature
     computed_signature = hmac.new(
         webhook_secret.encode(),
-        request.data,
+        request_data,
         hashlib.sha256
     ).hexdigest()
     
+    # Use constant time comparison to prevent timing attacks
     if not hmac.compare_digest(computed_signature, signature):
+        app.logger.warning("Invalid webhook signature")
         return jsonify({'success': False, 'error': 'Invalid signature'}), 403
+    
+    # Parse JSON payload
+    try:
+        payload = request.json
+    except Exception as e:
+        app.logger.error(f"Invalid JSON payload: {str(e)}")
+        return jsonify({'success': False, 'error': 'Invalid JSON'}), 400
+    
+    # Validate the payload has the expected structure
+    if not payload or 'meta' not in payload or 'event_name' not in payload['meta']:
+        app.logger.warning("Malformed webhook payload")
+        return jsonify({'success': False, 'error': 'Malformed payload'}), 400
+    
+    # Log the webhook event for debugging
+    event_name = payload['meta']['event_name']
+    app.logger.info(f"Processing Lemon Squeezy webhook: {event_name}")
     
     # Process the webhook
     subscription_manager = get_subscription_manager()
-    success = subscription_manager.process_webhook(payload, signature)
+    success = subscription_manager.process_webhook(payload)
     
     if success:
+        app.logger.info(f"Successfully processed webhook: {event_name}")
         return jsonify({'success': True}), 200
     else:
+        app.logger.error(f"Failed to process webhook: {event_name}")
         return jsonify({'success': False, 'error': 'Failed to process webhook'}), 500
 
 @subscription_bp.route('/subscription/status')

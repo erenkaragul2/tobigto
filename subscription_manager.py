@@ -18,11 +18,41 @@ class LemonSqueezyClient:
             "Authorization": f"Bearer {api_key}"
         }
     
-    def get_subscription(self, subscription_id):
-        """Get subscription details"""
-        url = f"{self.BASE_URL}/subscriptions/{subscription_id}"
-        response = requests.get(url, headers=self.headers)
-        return response.json() if response.ok else None
+    def get_user_subscription(self, user_id):
+        """Get the current subscription for a user with improved error handling"""
+        if not user_id:
+            app.logger.error("get_user_subscription called with empty user_id")
+            return None
+            
+        try:
+            response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).eq('status', 'active').execute()
+            
+            if response.data and len(response.data) > 0:
+                subscription = response.data[0]
+                
+                # Check if subscription is still valid
+                if subscription['current_period_end']:
+                    end_date = datetime.fromisoformat(subscription['current_period_end'].replace('Z', '+00:00'))
+                    if end_date < datetime.now(timezone.utc):
+                        # Subscription has expired, update status
+                        app.logger.info(f"Subscription {subscription['id']} has expired, updating status")
+                        self.supabase.table('subscriptions').update({'status': 'expired'}).eq('id', subscription['id']).execute()
+                        return None
+                
+                # Enrich the subscription with plan details
+                plan_id = subscription.get('plan_id')
+                for plan_key, plan_info in self.PLANS.items():
+                    if plan_info['variant_id'] == plan_id:
+                        subscription['plan_name'] = plan_info['name']
+                        subscription['plan_key'] = plan_key
+                        subscription['features'] = plan_info['features']
+                        break
+                
+                return subscription
+            return None
+        except Exception as e:
+            app.logger.error(f"Error fetching subscription for user {user_id}: {str(e)}")
+            return None
     
     def get_customer(self, customer_id):
         """Get customer details"""
@@ -30,47 +60,93 @@ class LemonSqueezyClient:
         response = requests.get(url, headers=self.headers)
         return response.json() if response.ok else None
     
-    def create_checkout(self, store_id, variant_id, custom_price=None, checkout_data=None):
-        """Create a checkout session for a subscription"""
-        url = f"{self.BASE_URL}/checkouts"
+    def create_checkout_session(self, user_id, email, plan_id, success_url, cancel_url):
+        """Create a checkout session for a subscription with improved validation"""
+        if not user_id or not email:
+            app.logger.error("Missing required parameters for checkout session")
+            raise ValueError("User ID and email are required")
+            
+        if plan_id not in self.PLANS:
+            app.logger.error(f"Invalid plan ID: {plan_id}")
+            raise ValueError(f"Invalid plan ID: {plan_id}")
+        
+        plan = self.PLANS[plan_id]
+        
+        if not plan.get('variant_id'):
+            app.logger.error(f"Missing variant ID for plan: {plan_id}")
+            raise ValueError(f"Plan configuration error: missing variant ID")
+        
+        if not self.store_id:
+            app.logger.error("Missing store ID in subscription manager")
+            raise ValueError("Subscription manager configuration error: missing store ID")
+        
+        checkout_data = {
+            "email": email,
+            "custom": {
+                "user_id": user_id
+            },
+            "success_url": success_url,
+            "cancel_url": cancel_url
+        }
+        
+        app.logger.info(f"Creating checkout session for user {user_id}, plan {plan_id}")
+        
+        try:
+            response = self.ls_client.create_checkout(
+                store_id=self.store_id,
+                variant_id=plan['variant_id'],
+                checkout_data=checkout_data
+            )
+            
+            if response and 'data' in response:
+                checkout_url = response['data']['attributes']['url']
+                app.logger.info(f"Checkout session created successfully: {checkout_url}")
+                return checkout_url
+            else:
+                app.logger.error("Invalid response from Lemon Squeezy API")
+                if response:
+                    app.logger.error(f"Response: {response}")
+                return None
+        except Exception as e:
+            app.logger.error(f"Error creating checkout session: {str(e)}")
+            raise
+    def create_customer_portal_url(self, customer_id, return_url=None):
+        """
+        Create a customer portal URL for managing subscriptions
+        
+        Args:
+            customer_id: The Lemon Squeezy customer ID
+            return_url: Optional URL to redirect to after customer actions
+            
+        Returns:
+            Customer portal URL or None on error
+        """
+        url = f"{self.BASE_URL}/customers/{customer_id}/portal"
         
         payload = {
             "data": {
-                "type": "checkouts",
-                "attributes": {
-                    "store_id": store_id,
-                    "variant_id": variant_id,
-                    "custom_price": custom_price,
-                    "checkout_data": checkout_data or {},
-                    "product_options": {
-                        "enabled": True,
-                        "name": True,
-                        "description": True,
-                        "media": True,
-                        "redirect_url": None  # Will be set based on success_url
-                    }
-                },
-                "relationships": {}
+                "type": "customer-portals",
+                "attributes": {}
             }
         }
         
-        response = requests.post(url, headers=self.headers, json=payload)
-        return response.json() if response.ok else None
-    
-    def cancel_subscription(self, subscription_id):
-        """Cancel a subscription"""
-        url = f"{self.BASE_URL}/subscriptions/{subscription_id}"
-        payload = {
-            "data": {
-                "type": "subscriptions",
-                "id": subscription_id,
-                "attributes": {
-                    "cancelled": True
-                }
-            }
-        }
-        response = requests.patch(url, headers=self.headers, json=payload)
-        return response.ok
+        # Add return URL if provided
+        if return_url:
+            payload["data"]["attributes"]["return_url"] = return_url
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            
+            if response.ok:
+                data = response.json()
+                return data.get("data", {}).get("attributes", {}).get("url")
+            else:
+                print(f"Error creating customer portal: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"Exception creating customer portal: {str(e)}")
+            return None
+
 
 
 class SubscriptionManager:
@@ -80,17 +156,17 @@ class SubscriptionManager:
     PLANS = {
         'starter': {
             'name': 'Starter',
-            'variant_id': 'YOUR_VARIANT_ID_HERE',  # Replace with your variant ID
+            'variant_id': '727207',  # Replace with your variant ID
             'features': ['5 vehicles', 'Basic route optimization', 'Email support']
         },
         'professional': {
             'name': 'Professional',
-            'variant_id': 'YOUR_VARIANT_ID_HERE',  # Replace with your variant ID
+            'variant_id': '727230',  # Replace with your variant ID
             'features': ['20 vehicles', 'Advanced route optimization', 'Priority support']
         },
         'enterprise': {
             'name': 'Enterprise',
-            'variant_id': 'YOUR_VARIANT_ID_HERE',  # Replace with your variant ID
+            'variant_id': '727232',  # Replace with your variant ID
             'features': ['Unlimited vehicles', 'Premium features', '24/7 support']
         }
     }
