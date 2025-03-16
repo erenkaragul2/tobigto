@@ -83,6 +83,33 @@
             <p class="mb-0">CVRP Solver Web Application &copy; 2025</p>
         </div>
     </footer>
+    {% if trial_expired %}
+    <div class="container mt-3">
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong><i class="fas fa-exclamation-circle me-2"></i>Trial Expired</strong>
+                    Your free trial has expired. Please subscribe to a plan to continue using all features.
+                </div>
+                <a href="{{ url_for('subscription.pricing') }}" class="btn btn-danger">Subscribe Now</a>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+    {% elif trial_expiring_soon %}
+    <div class="container mt-3">
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong><i class="fas fa-clock me-2"></i>Trial Ending Soon</strong>
+                    Your free trial is about to expire. Subscribe now to avoid interruption.
+                </div>
+                <a href="{{ url_for('subscription.pricing') }}" class="btn btn-warning">Subscribe Now</a>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Help Modal -->
     <div class="modal fade" id="helpModal" tabindex="-1">

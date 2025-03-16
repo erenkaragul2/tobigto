@@ -1,0 +1,267 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Pricing - RouteOptimize{% endblock %}
+
+{% block head %}
+<style>
+    .pricing-header {
+        background-color: #f8f9fa;
+        padding: 2rem 0;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .pricing-switch {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 2rem 0;
+    }
+    
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+        margin: 0 10px;
+    }
+    
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 34px;
+    }
+    
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+    
+    input:checked + .slider {
+        background-color: #1a56db;
+    }
+    
+    input:checked + .slider:before {
+        transform: translateX(26px);
+    }
+    
+    .pricing-card {
+        transition: transform 0.3s, box-shadow 0.3s;
+        height: 100%;
+    }
+    
+    .pricing-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    
+    .popular-badge {
+        position: absolute;
+        top: -15px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #1a56db;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 1rem;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+    
+    .price {
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+    
+    .price small {
+        font-size: 1rem;
+        font-weight: 400;
+        color: #6c757d;
+    }
+    
+    .feature-list li {
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    .feature-check {
+        margin-right: 0.5rem;
+        color: #10b981;
+    }
+    
+    .feature-cross {
+        margin-right: 0.5rem;
+        color: #ef4444;
+    }
+    
+    .save-badge {
+        background-color: #e5edff;
+        color: #1a56db;
+        padding: 0.25rem 0.5rem;
+        border-radius: 1rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+    
+    .current-plan-badge {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background-color: #10b981;
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="pricing-header text-center">
+        <h1 class="mb-3">Simple, Transparent Pricing</h1>
+        <p class="lead text-muted">Choose the plan that works best for your business.</p>
+        
+        <div class="pricing-switch">
+            <span class="fw-bold">Monthly</span>
+            <label class="switch">
+                <input type="checkbox" id="billingToggle" checked>
+                <span class="slider"></span>
+            </label>
+            <span class="fw-bold">Annual</span>
+            <span class="save-badge">Save 20%</span>
+        </div>
+    </div>
+    
+    <div class="row row-cols-1 row-cols-md-3 mb-5">
+        <div class="col mb-4">
+            <div class="card pricing-card">
+                <div class="card-body">
+                    <h4 class="card-title text-center">Starter</h4>
+                    <p class="text-center text-muted mb-4">Perfect for small businesses</p>
+                    
+                    <div class="text-center mb-4">
+                        <div class="price monthly-price" style="display: none;">$49<small>/mo</small></div>
+                        <div class="price annual-price">$39<small>/mo</small></div>
+                        <p class="text-muted mb-0 annual-price">Billed annually ($468/year)</p>
+                        <p class="text-muted mb-0 monthly-price" style="display: none;">Billed monthly</p>
+                    </div>
+                    
+                    <ul class="list-unstyled feature-list">
+                        <li><i class="fas fa-check feature-check"></i> Up to 5 vehicles</li>
+                        <li><i class="fas fa-check feature-check"></i> Basic route optimization</li>
+                        <li><i class="fas fa-check feature-check"></i> Email support</li>
+                        <li><i class="fas fa-check feature-check"></i> Mobile app access</li>
+                        <li><i class="fas fa-check feature-check"></i> Customer notifications</li>
+                        <li><i class="fas fa-check feature-check"></i> Basic analytics</li>
+                        <li><i class="fas fa-check feature-check"></i> API access</li>
+                        <li><i class="fas fa-times feature-cross"></i> Custom integrations</li>>
+                        <li><i class="fas fa-times feature-cross"></i> Real-time tracking</li>
+                        <li><i class="fas fa-times feature-cross"></i> Advanced analytics</li>
+                        <li><i class="fas fa-times feature-cross"></i> API access</li>
+                        <li><i class="fas fa-times feature-cross"></i> Custom integrations</li>
+                    </ul>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        {% if current_subscription and current_subscription.plan_id == plans.starter.variant_id %}
+                            <div class="current-plan-badge">Current Plan</div>
+                            <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">Manage Subscription</a>
+                        {% else %}
+                            <a href="{{ url_for('subscription.subscribe', plan_id='starter') }}" class="btn btn-primary">
+                                {% if current_subscription %}
+                                    Switch Plan
+                                {% else %}
+                                    Start Free Trial
+                                {% endif %}
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col mb-4">
+            <div class="card pricing-card">
+                <div class="card-body">
+                    <h4 class="card-title text-center">Enterprise</h4>
+                    <p class="text-center text-muted mb-4">For large fleets and complex operations</p>
+                    
+                    <div class="text-center mb-4">
+                        <div class="price monthly-price" style="display: none;">$199<small>/mo</small></div>
+                        <div class="price annual-price">$159<small>/mo</small></div>
+                        <p class="text-muted mb-0 annual-price">Billed annually ($1908/year)</p>
+                        <p class="text-muted mb-0 monthly-price" style="display: none;">Billed monthly</p>
+                    </div>
+                    
+                    <ul class="list-unstyled feature-list">
+                        <li><i class="fas fa-check feature-check"></i> Unlimited vehicles</li>
+                        <li><i class="fas fa-check feature-check"></i> Premium route optimization</li>
+                        <li><i class="fas fa-check feature-check"></i> Real-time tracking</li>
+                        <li><i class="fas fa-check feature-check"></i> 24/7 priority support</li>
+                        <li><i class="fas fa-check feature-check"></i> Mobile app access</li>
+                        <li><i class="fas fa-check feature-check"></i> Advanced customer notifications</li>
+                        <li><i class="fas fa-check feature-check"></i> Advanced analytics & reporting</li>
+                        <li><i class="fas fa-check feature-check"></i> API access</li>
+                        <li><i class="fas fa-check feature-check"></i> Custom integrations</li>
+                        <li><i class="fas fa-check feature-check"></i> Dedicated account manager</li>
+                    </ul>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        {% if current_subscription and current_subscription.plan_id == plans.enterprise.variant_id %}
+                            <div class="current-plan-badge">Current Plan</div>
+                            <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">Manage Subscription</a>
+                        {% else %}
+                            <a href="{{ url_for('subscription.subscribe', plan_id='enterprise') }}" class="btn btn-primary">
+                                {% if current_subscription %}
+                                    Switch Plan
+                                {% else %}
+                                    Start Free Trial
+                                {% endif %}
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+            <div class="card pricing-card">
+                <div class="popular-badge">Most Popular</div>
+                <div class="card-body">
+                    <h4 class="card-title text-center">Professional</h4>
+                    <p class="text-center text-muted mb-4">Ideal for growing businesses</p>
+                    
+                    <div class="text-center mb-4">
+                        <div class="price monthly-price" style="display: none;">$99<small>/mo</small></div>
+                        <div class="price annual-price">$79<small>/mo</small></div>
+                        <p class="text-muted mb-0 annual-price">Billed annually ($948/year)</p>
+                        <p class="text-muted mb-0 monthly-price" style="display: none;">Billed monthly</p>
+                    </div>
+                    
+                    <ul class="list-unstyled feature-list">
+                        <li><i class="fas fa-check feature-check"></i> Up to 20 vehicles</li>
+                        <li><i class="fas fa-check feature-check"></i> Advanced route optimization</li>
+                        <li><i class="fas fa-check feature-check"></i> Real-time tracking</li>
+                        <li><i class="fas fa-check feature-check"></i> Priority email & chat support</li>
+                        <li><i class="fas fa-check feature-check"></i> Mobile app access</li>
+                        <li><i class="fas fa-check feature-check"></i> Customer notifications</li

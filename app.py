@@ -1,5 +1,5 @@
 # Description: Main application file for the CVRP solver web app with Supabase authentication
-from flask import Flask, request, jsonify, session, redirect, url_for, render_template, flash, g, make_response
+from flask import Flask, request, jsonify, session, redirect, url_for, render_template, flash, g, make_response, Blueprint
 import os
 import uuid
 import numpy as np
@@ -18,6 +18,9 @@ import os
 from dotenv import load_dotenv
 from models.distance_matrix import compute_google_distance_matrix, compute_euclidean_distance_matrix
 from auth_middleware import login_required, admin_required, configure_auth_middleware
+from subscription_manager import subscription_required, get_subscription_manager
+from subscription_routes import subscription_bp
+from trial_middleware import configure_trial_middleware
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,10 +42,35 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Configure authentication middleware
 app = configure_auth_middleware(app)
+app.register_blueprint(subscription_bp)
 
 # Global storage for ongoing solver jobs
 solver_jobs = {}
+@app.before_request
+def setup_subscription_manager():
+    g.subscription_manager = get_subscription_manager()
 
+# Context processor to make subscription-related data available to templates
+@app.context_processor
+def inject_subscription_data():
+    if 'user' in session:
+        subscription_manager = get_subscription_manager()
+        subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        
+        # Get plan features if subscription exists
+        if subscription:
+            plan_id = subscription.get('plan_id')
+            for plan_key, plan_info in subscription_manager.PLANS.items():
+                if plan_info['variant_id'] == plan_id:
+                    subscription['plan_name'] = plan_info['name']
+                    subscription['features'] = plan_info['features']
+                    break
+            
+        return {
+            'subscription': subscription,
+            'plans': subscription_manager.PLANS
+        }
+    return {}
 # Public routes
 @app.route('/')
 def landing():
@@ -176,6 +204,7 @@ def forgot_password():
             flash(f"Error: {str(e)}", "danger")
     
     return render_template('forgot_password.html')
+
 
 # Protected user routes
 @app.route('/dashboard')
