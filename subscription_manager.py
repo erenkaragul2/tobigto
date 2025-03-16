@@ -278,6 +278,210 @@ class SubscriptionManager:
             raise
     
     # Replace the process_webhook method in subscription_manager.py
+    def get_user_usage(self, user_id):
+        """
+        Get usage statistics for a user
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            dict: Usage statistics including routes created this month
+        """
+        if not user_id:
+            return {'routes_created': 0}
+        
+        try:
+            # Get the current month and year
+            current_date = datetime.now(timezone.utc)
+            current_month = current_date.month
+            current_year = current_date.year
+            
+            # Query the usage_tracking table for the current month
+            start_of_month = datetime(current_year, current_month, 1, tzinfo=timezone.utc).isoformat()
+            end_of_month = datetime(
+                current_year if current_month < 12 else current_year + 1,
+                current_month + 1 if current_month < 12 else 1, 
+                1, tzinfo=timezone.utc
+            ).isoformat()
+            
+            # Query the database for usage in the current month
+            try:
+                response = self.supabase.table('usage_tracking').select('*')\
+                    .eq('user_id', user_id)\
+                    .gte('created_at', start_of_month)\
+                    .lt('created_at', end_of_month)\
+                    .execute()
+                
+                if response.data:
+                    # Sum up the routes created this month
+                    routes_created = sum(item.get('routes_created', 0) for item in response.data)
+                    return {'routes_created': routes_created}
+                else:
+                    return {'routes_created': 0}
+                    
+            except Exception as e:
+                print(f"Error querying usage tracking: {str(e)}")
+                # Create the table if it doesn't exist
+                self._ensure_usage_tracking_table_exists()
+                return {'routes_created': 0}
+            
+        except Exception as e:
+            print(f"Error getting user usage: {str(e)}")
+            return {'routes_created': 0}
+
+    def get_user_limits(self, user_id):
+        """
+        Get the usage limits for a user based on their subscription
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            dict: Usage limits including max routes and max drivers
+        """
+        # Default limits for trial users
+        default_limits = {
+            'max_routes': 5,
+            'max_drivers': 3,
+            'is_trial': True
+        }
+        
+        if not user_id:
+            return default_limits
+        
+        # Get the user's subscription
+        subscription = self.get_user_subscription(user_id)
+        
+        if not subscription:
+            return default_limits
+        
+        # Get the plan details
+        plan_id = subscription.get('plan_id')
+        
+        # Find matching plan
+        for plan_key, plan_info in self.PLANS.items():
+            if plan_info['variant_id'] == plan_id:
+                return {
+                    'max_routes': plan_info['limits']['max_routes'],
+                    'max_drivers': plan_info['limits']['max_drivers'],
+                    'is_trial': False
+                }
+        
+        # If no matching plan found, return default limits
+        return default_limits
+
+    def get_max_drivers(self, user_id):
+        """
+        Get the maximum number of drivers allowed for a user
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            int: Maximum number of drivers allowed
+        """
+        limits = self.get_user_limits(user_id)
+        return limits.get('max_drivers', 3)  # Default to 3 if not found
+
+    def check_route_limit(self, user_id):
+        """
+        Check if a user has hit their route creation limit
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            tuple: (has_routes_left, routes_created, max_routes)
+        """
+        # Get user limits
+        limits = self.get_user_limits(user_id)
+        max_routes = limits.get('max_routes', 5)  # Default to 5 if not found
+        
+        # Get user usage
+        usage = self.get_user_usage(user_id)
+        routes_created = usage.get('routes_created', 0)
+        
+        # Check if user has routes left
+        has_routes_left = routes_created < max_routes
+        
+        return has_routes_left, routes_created, max_routes
+
+    def record_route_creation(self, user_id):
+        """
+        Record a route creation in the usage tracking table
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not user_id:
+            return False
+        
+        try:
+            # Ensure the table exists
+            self._ensure_usage_tracking_table_exists()
+            
+            # Check if there's an entry for today
+            today = datetime.now(timezone.utc).date().isoformat()
+            
+            try:
+                # Try to get the usage record for today
+                response = self.supabase.table('usage_tracking').select('*')\
+                    .eq('user_id', user_id)\
+                    .eq('usage_date', today)\
+                    .execute()
+                
+                if response.data and len(response.data) > 0:
+                    # Update existing record
+                    record_id = response.data[0].get('id')
+                    routes_created = response.data[0].get('routes_created', 0) + 1
+                    
+                    self.supabase.table('usage_tracking').update({
+                        'routes_created': routes_created,
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('id', record_id).execute()
+                else:
+                    # Create new record
+                    self.supabase.table('usage_tracking').insert({
+                        'user_id': user_id,
+                        'usage_date': today,
+                        'routes_created': 1,
+                        'created_at': datetime.now(timezone.utc).isoformat()
+                    }).execute()
+                
+                return True
+                
+            except Exception as e:
+                print(f"Error recording route creation: {str(e)}")
+                return False
+                
+        except Exception as e:
+            print(f"Error in record_route_creation: {str(e)}")
+            return False
+
+    def _ensure_usage_tracking_table_exists(self):
+        """
+        Ensure the usage_tracking table exists in the database
+        """
+        try:
+            # Check if table exists by querying it
+            self.supabase.table('usage_tracking').select('count').limit(1).execute()
+        except Exception as e:
+            # If table doesn't exist, create it
+            if 'The table usage_tracking does not exist' in str(e):
+                print("Creating usage_tracking table...")
+                try:
+                    # Note: Table creation might require more privileges than your API key has
+                    # This is just an example of how it might work
+                    self.supabase.rpc('create_usage_tracking_table').execute()
+                except Exception as create_error:
+                    print(f"Error creating usage_tracking table: {str(create_error)}")
+                    print("The table needs to be created manually in the Supabase dashboard")
+            else:
+                print(f"Error checking usage_tracking table: {str(e)}")
 
     def process_webhook(self, payload, signature=None):
         """
@@ -311,7 +515,6 @@ class SubscriptionManager:
         # Log unknown events
         print(f"Unknown webhook event: {event_name}")
         return False
-    # Replace the existing _handle_subscription_created method
 
     def _handle_subscription_created(self, payload):
         """Handle subscription_created webhook event with improved user ID extraction"""
@@ -326,11 +529,18 @@ class SubscriptionManager:
             # Try to get user_id from different possible locations
             user_id = None
             
-            # First check for custom_data in attributes
-            if 'custom_data' in attributes:
-                custom_data = attributes.get('custom_data', {})
-                if isinstance(custom_data, dict) and 'user_id' in custom_data:
-                    user_id = custom_data.get('user_id')
+            # First check for user_id in meta.custom_data (NEW LOCATION)
+            meta = payload.get('meta', {})
+            custom_data = meta.get('custom_data', {})
+            if isinstance(custom_data, dict) and 'user_id' in custom_data:
+                user_id = custom_data.get('user_id')
+                print(f"Found user_id in meta.custom_data: {user_id}")
+            
+            # Then check for custom_data in attributes
+            if not user_id and 'custom_data' in attributes:
+                attr_custom_data = attributes.get('custom_data', {})
+                if isinstance(attr_custom_data, dict) and 'user_id' in attr_custom_data:
+                    user_id = attr_custom_data.get('user_id')
                     print(f"Found user_id in attributes.custom_data: {user_id}")
             
             # Check in order_id if available
@@ -357,9 +567,8 @@ class SubscriptionManager:
                 except Exception as e:
                     print(f"Error fetching order: {str(e)}")
             
-            # Check in meta data
+            # Check in meta data legacy format
             if not user_id and 'meta' in payload:
-                meta = payload.get('meta', {})
                 if 'custom' in meta and isinstance(meta.get('custom'), dict):
                     user_id = meta.get('custom', {}).get('user_id')
                     print(f"Found user_id in meta.custom: {user_id}")
@@ -396,7 +605,7 @@ class SubscriptionManager:
                 if existing.data and len(existing.data) > 0:
                     print(f"Subscription record already exists for subscription {subscription_id}")
                     
-                    # Update the existing record instead of creating a new one
+                    # Update the existing record
                     response = self.supabase.table('subscriptions').update({
                         'user_id': user_id,
                         'customer_id': attributes.get('customer_id'),
@@ -515,20 +724,90 @@ class SubscriptionManager:
             return False
     
     def _handle_subscription_updated(self, payload):
-        """Handle subscription_updated webhook event"""
+        """Handle subscription_updated webhook event with improved record creation/update"""
         try:
             subscription_data = payload.get('data', {})
             subscription_id = subscription_data.get('id')
             attributes = subscription_data.get('attributes', {})
             
-            self.supabase.table('subscriptions').update({
-                'current_period_end': attributes.get('renews_at'),
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('subscription_id', subscription_id).execute()
+            print(f"Handling subscription_updated for subscription_id: {subscription_id}")
             
-            return True
+            # Extract user_id from meta.custom_data (this is the new location in your webhook)
+            user_id = None
+            meta = payload.get('meta', {})
+            custom_data = meta.get('custom_data', {})
+            if isinstance(custom_data, dict) and 'user_id' in custom_data:
+                user_id = custom_data.get('user_id')
+                print(f"Found user_id in meta.custom_data: {user_id}")
+            
+            # If we couldn't find user_id, try other locations
+            if not user_id:
+                # Try in attributes.custom_data
+                attr_custom_data = attributes.get('custom_data', {})
+                if isinstance(attr_custom_data, dict) and 'user_id' in attr_custom_data:
+                    user_id = attr_custom_data.get('user_id')
+                    print(f"Found user_id in attributes.custom_data: {user_id}")
+            
+            # If we still don't have a user_id, try to get it from the existing subscription
+            if not user_id:
+                try:
+                    response = self.supabase.table('subscriptions').select('user_id').eq('subscription_id', subscription_id).execute()
+                    if response.data and len(response.data) > 0:
+                        user_id = response.data[0].get('user_id')
+                        print(f"Found user_id from existing subscription record: {user_id}")
+                except Exception as e:
+                    print(f"Error looking up existing subscription: {str(e)}")
+            
+            if not user_id:
+                print("ERROR: Could not find user_id in webhook payload or existing record")
+                return False
+            
+            # Check if subscription record exists
+            try:
+                response = self.supabase.table('subscriptions').select('*').eq('subscription_id', subscription_id).execute()
+                
+                if response.data and len(response.data) > 0:
+                    print(f"Updating existing subscription record for subscription {subscription_id}")
+                    
+                    # Update the existing record
+                    self.supabase.table('subscriptions').update({
+                        'status': 'active',
+                        'current_period_end': attributes.get('renews_at'),
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('subscription_id', subscription_id).execute()
+                    
+                    print("Subscription record updated successfully")
+                else:
+                    print(f"No existing record found for subscription {subscription_id}, creating new record")
+                    
+                    # Get variant_id from attributes
+                    variant_id = attributes.get('variant_id')
+                    
+                    # Create a new subscription record
+                    new_subscription = {
+                        'user_id': user_id,
+                        'subscription_id': subscription_id,
+                        'customer_id': attributes.get('customer_id'),
+                        'plan_id': variant_id,
+                        'status': 'active',
+                        'current_period_end': attributes.get('renews_at')
+                    }
+                    
+                    response = self.supabase.table('subscriptions').insert(new_subscription).execute()
+                    print(f"Created new subscription record: {response.data}")
+                
+                return True
+                
+            except Exception as e:
+                print(f"Error checking/updating subscription: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                return False
+                
         except Exception as e:
             print(f"Error handling subscription update: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             return False
     
     def _handle_subscription_cancelled(self, payload):
