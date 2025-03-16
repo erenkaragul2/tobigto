@@ -22,6 +22,8 @@ from subscription_manager import subscription_required, get_subscription_manager
 from subscription_routes import subscription_bp
 from trial_middleware import configure_trial_middleware
 from usage_limits import route_limit_required, driver_limit_check
+# Import the enhanced upload handler
+from upload_handler import enhanced_upload_handler
 
 
 # Load environment variables from .env file
@@ -474,6 +476,7 @@ def templates():
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    # Get file from request
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file part'})
     
@@ -482,7 +485,14 @@ def upload_file():
         return jsonify({'success': False, 'error': 'No selected file'})
     
     try:
-        # Read the file based on its extension without saving
+        # Get user ID from session
+        user_id = session['user']['id']
+        
+        # Read file into memory for processing
+        file_content = file.read()
+        file.stream.seek(0)  # Reset for reading again
+        
+        # Process file with pandas (similar to original code)
         file_ext = os.path.splitext(file.filename)[1].lower()
         
         if file_ext in ['.xlsx', '.xls']:
@@ -492,7 +502,7 @@ def upload_file():
         else:
             return jsonify({'success': False, 'error': 'Unsupported file format'})
         
-        # Standardize column names (case-insensitive match)
+        # Map columns (same as original)
         column_mapping = {}
         for col in data_df.columns:
             col_lower = col.lower()
@@ -514,11 +524,28 @@ def upload_file():
         if column_mapping:
             data_df.rename(columns=column_mapping, inplace=True)
         
-        # Store data in session
+        # Upload file to Supabase
+        import uuid
+        from werkzeug.utils import secure_filename
+        
+        # Create a secure unique filename
+        original_filename = secure_filename(file.filename)
+        storage_filename = f"{uuid.uuid4()}{file_ext}"
+        storage_path = f"files/{user_id}/{storage_filename}"
+        
+        # Upload to Supabase Storage
+        supabase.storage.from_('cvrp-uploads').upload(
+            storage_path,
+            file_content,
+            {'content-type': file.content_type}
+        )
+        
+        # Store data in session with reference to Supabase path
         session['data'] = {
             'filename': file.filename,
+            'storage_path': storage_path,  # Store the Supabase path
             'columns': data_df.columns.tolist(),
-            'dataframe': data_df.to_json(orient='split')  # Store the dataframe as JSON in the session
+            'dataframe': data_df.to_json(orient='split')
         }
         
         # Return headers to client
@@ -526,7 +553,8 @@ def upload_file():
             'success': True, 
             'message': f'File {file.filename} uploaded successfully',
             'columns': data_df.columns.tolist(),
-            'previewData': data_df.head(20).to_dict(orient='records')
+            'previewData': data_df.head(20).to_dict(orient='records'),
+            'file_path': storage_path  # Return the storage path for reference
         })
         
     except Exception as e:

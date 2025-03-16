@@ -1511,43 +1511,71 @@ let subscriptionInfo = {
         });
       };
     }
+    // Add this to your static/js folder and reference it in your HTML
     document.addEventListener('DOMContentLoaded', function() {
-        // Ensure all UI elements are properly referenced
-        console.log("Checking UI element references...");
+        // Get DOM elements
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
         
-        // Critical elements for file upload
-        const criticalElements = [
-            { name: 'fileInput', id: 'fileInput' },
-            { name: 'uploadBtn', id: 'uploadBtn' },
-            { name: 'dataPreviewContainer', id: 'dataPreviewContainer' }
-        ];
-        
-        // Check each critical element
-        criticalElements.forEach(elem => {
-            if (!ui[elem.name] || ui[elem.name] === null) {
-                console.log(`Element ${elem.name} was not found in ui object. Trying to find it in DOM...`);
-                ui[elem.name] = document.getElementById(elem.id);
-                
-                if (ui[elem.name]) {
-                    console.log(`Found and fixed reference to ${elem.name}`);
-                } else {
-                    console.error(`CRITICAL: Could not find element with id ${elem.id} in the DOM`);
-                }
-            } else {
-                console.log(`Element ${elem.name} reference is OK`);
+        // Replace existing handler
+        uploadBtn.onclick = function() {
+            // Check if file is selected
+            if (!fileInput.files || !fileInput.files.length) {
+                alert('Please select a file to upload');
+                return;
             }
-        });
-        
-        // Re-attach event listener for upload button to be safe
-        if (ui.uploadBtn) {
-            console.log("Re-attaching upload button event listener");
-            // Remove existing listeners (in case there are duplicates)
-            ui.uploadBtn.removeEventListener('click', uploadFile);
-            // Add the listener
-            ui.uploadBtn.addEventListener('click', uploadFile);
-        }
-        
-        console.log("UI element reference check complete");
+            
+            const file = fileInput.files[0];
+            
+            // Show loading state
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
+            
+            // Create FormData and send
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button state
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload and Process';
+                
+                if (data.success) {
+                    // Update UI with file data
+                    if (typeof window.showDataPreview === 'function') {
+                        window.showDataPreview(data);
+                    }
+                    
+                    // Enable next step
+                    const processDataBtn = document.getElementById('processDataBtn');
+                    if (processDataBtn) {
+                        processDataBtn.disabled = false;
+                    }
+                    
+                    // Enable config tab
+                    const configTab = document.getElementById('config-tab');
+                    if (configTab) {
+                        configTab.classList.remove('disabled');
+                    }
+                    
+                    // Show success message
+                    alert('File uploaded successfully!');
+                } else {
+                    // Show error
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload and Process';
+                alert('Error uploading file: ' + error.message);
+            });
+        };
     });
     
     // Initialize max vehicles input
