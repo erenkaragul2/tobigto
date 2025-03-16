@@ -96,7 +96,26 @@ def subscribe(plan_id):
 @subscription_bp.route('/subscription/success')
 def success():
     """Handle successful subscription"""
-    flash('Your subscription has been activated!', 'success')
+    if 'user' not in session:
+        flash('Please log in to continue', 'warning')
+        return redirect(url_for('login'))
+    
+    # Try to find the subscription in the database
+    subscription_manager = get_subscription_manager()
+    user_id = session['user']['id']
+    
+    # Give Lemon Squeezy webhook a moment to process (optional)
+    # time.sleep(2)
+    
+    # Check if subscription exists
+    subscription = subscription_manager.get_user_subscription(user_id)
+    
+    if subscription:
+        flash('Your subscription has been activated! Welcome to your new plan.', 'success')
+    else:
+        # If not found yet, show a "processing" message
+        flash('Your subscription is being processed. It may take a few moments to appear in your account.', 'info')
+    
     return redirect(url_for('dashboard'))
 
 @subscription_bp.route('/subscription/cancel')
@@ -204,16 +223,34 @@ def lemon_squeezy_webhook():
     event_name = payload['meta']['event_name']
     current_app.logger.info(f"Processing Lemon Squeezy webhook: {event_name}")
     
-    # Process the webhook
-    subscription_manager = get_subscription_manager()
-    success = subscription_manager.process_webhook(payload)
-    
-    if success:
-        current_app.logger.info(f"Successfully processed webhook: {event_name}")
-        return jsonify({'success': True}), 200
-    else:
-        current_app.logger.error(f"Failed to process webhook: {event_name}")
-        return jsonify({'success': False, 'error': 'Failed to process webhook'}), 500
+    # Process the webhook - FIX: Pass both payload AND signature to process_webhook
+    try:
+        subscription_manager = get_subscription_manager()
+        
+        # THE FIX: Use try/except to handle different method signatures
+        try:
+            # Try with both parameters (payload, signature)
+            success = subscription_manager.process_webhook(payload, signature)
+        except TypeError:
+            # Fallback to just the payload if that's all the method accepts
+            current_app.logger.info("Falling back to process_webhook with only payload parameter")
+            success = subscription_manager.process_webhook(payload)
+        
+        if success:
+            current_app.logger.info(f"Successfully processed webhook: {event_name}")
+            return jsonify({'success': True}), 200
+        else:
+            current_app.logger.error(f"Failed to process webhook: {event_name}")
+            return jsonify({'success': False, 'error': 'Failed to process webhook'}), 500
+    except Exception as e:
+        import traceback
+        current_app.logger.error(f"Exception processing webhook: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @subscription_bp.route('/subscription/status')
 def status():

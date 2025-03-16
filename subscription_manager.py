@@ -277,10 +277,21 @@ class SubscriptionManager:
             current_app.logger.error(f"Error creating checkout session: {str(e)}")
             raise
     
-    def process_webhook(self, payload, signature):
-        """Process webhook from Lemon Squeezy"""
-        # Verify webhook signature
-        # Implementation depends on how Lemon Squeezy sends webhooks
+    # Replace the process_webhook method in subscription_manager.py
+
+    def process_webhook(self, payload, signature=None):
+        """
+        Process webhook from Lemon Squeezy
+        
+        Args:
+            payload (dict): The webhook payload
+            signature (str, optional): The webhook signature (not used in processing but kept for compatibility)
+        
+        Returns:
+            bool: True if processed successfully, False otherwise
+        """
+        # Log the entire payload for debugging
+        print(f"Processing webhook: {json.dumps(payload, indent=2)}")
         
         event_name = payload.get('meta', {}).get('event_name')
         
@@ -294,36 +305,213 @@ class SubscriptionManager:
             return self._handle_subscription_resumed(payload)
         elif event_name == 'subscription_expired':
             return self._handle_subscription_expired(payload)
+        elif event_name == 'order_created':
+            return self._handle_order_created(payload)
         
+        # Log unknown events
+        print(f"Unknown webhook event: {event_name}")
         return False
-    
+    # Replace the existing _handle_subscription_created method
+
     def _handle_subscription_created(self, payload):
-        """Handle subscription_created webhook event"""
+        """Handle subscription_created webhook event with improved user ID extraction"""
         try:
             subscription_data = payload.get('data', {})
             subscription_id = subscription_data.get('id')
             attributes = subscription_data.get('attributes', {})
             
-            # Get user_id from custom data in subscription
-            custom_data = attributes.get('user_data', {})
-            user_id = custom_data.get('user_id')
+            # Log the full webhook payload for debugging
+            print(f"Subscription created webhook payload: {json.dumps(payload, indent=2)}")
+            
+            # Try to get user_id from different possible locations
+            user_id = None
+            
+            # First check for custom_data in attributes
+            if 'custom_data' in attributes:
+                custom_data = attributes.get('custom_data', {})
+                if isinstance(custom_data, dict) and 'user_id' in custom_data:
+                    user_id = custom_data.get('user_id')
+                    print(f"Found user_id in attributes.custom_data: {user_id}")
+            
+            # Check in order_id if available
+            if not user_id and 'order_id' in attributes:
+                try:
+                    order_id = attributes.get('order_id')
+                    print(f"Looking up order {order_id} for user_id")
+                    
+                    # Get the order data to find user_id
+                    response = requests.get(
+                        f"{self.ls_client.BASE_URL}/orders/{order_id}",
+                        headers=self.ls_client.headers
+                    )
+                    
+                    if response.ok:
+                        order_data = response.json()
+                        order_attributes = order_data.get('data', {}).get('attributes', {})
+                        
+                        # Check for user_id in order's custom_data
+                        order_custom_data = order_attributes.get('custom_data', {})
+                        if order_custom_data and 'user_id' in order_custom_data:
+                            user_id = order_custom_data.get('user_id')
+                            print(f"Found user_id in related order's custom_data: {user_id}")
+                except Exception as e:
+                    print(f"Error fetching order: {str(e)}")
+            
+            # Check in meta data
+            if not user_id and 'meta' in payload:
+                meta = payload.get('meta', {})
+                if 'custom' in meta and isinstance(meta.get('custom'), dict):
+                    user_id = meta.get('custom', {}).get('user_id')
+                    print(f"Found user_id in meta.custom: {user_id}")
+            
+            # Check for user email match if user_id still not found
+            if not user_id and 'user_email' in attributes:
+                email = attributes.get('user_email')
+                print(f"Trying to find user by email: {email}")
+                
+                try:
+                    # Look up the user by email in Supabase
+                    response = self.supabase.auth.admin.list_users()
+                    
+                    if hasattr(response, 'users'):
+                        for user in response.users:
+                            if user.email == email:
+                                user_id = user.id
+                                print(f"Found user_id by email lookup: {user_id}")
+                                break
+                except Exception as e:
+                    print(f"Error looking up user by email: {str(e)}")
             
             if not user_id:
+                print("ERROR: Could not find user_id in webhook payload")
                 return False
             
-            # Create subscription record
-            self.supabase.table('subscriptions').insert({
-                'user_id': user_id,
-                'subscription_id': subscription_id,
-                'customer_id': attributes.get('customer_id'),
-                'plan_id': attributes.get('variant_id'),
-                'status': 'active',
-                'current_period_end': attributes.get('renews_at')
-            }).execute()
+            print(f"Using user_id: {user_id}")
             
-            return True
+            # Check if a subscription record already exists for this subscription_id
+            try:
+                existing = self.supabase.table('subscriptions').select('*')\
+                    .eq('subscription_id', subscription_id).execute()
+                
+                if existing.data and len(existing.data) > 0:
+                    print(f"Subscription record already exists for subscription {subscription_id}")
+                    
+                    # Update the existing record instead of creating a new one
+                    response = self.supabase.table('subscriptions').update({
+                        'user_id': user_id,
+                        'customer_id': attributes.get('customer_id'),
+                        'plan_id': attributes.get('variant_id'),
+                        'status': 'active',
+                        'current_period_end': attributes.get('renews_at'),
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('subscription_id', subscription_id).execute()
+                    
+                    print(f"Updated existing subscription record: {response.data if hasattr(response, 'data') else 'Unknown'}")
+                    return True
+            except Exception as e:
+                print(f"Error checking for existing subscription: {str(e)}")
+            
+            # Create subscription record
+            try:
+                response = self.supabase.table('subscriptions').insert({
+                    'user_id': user_id,
+                    'subscription_id': subscription_id,
+                    'customer_id': attributes.get('customer_id'),
+                    'plan_id': attributes.get('variant_id'),
+                    'status': 'active',
+                    'current_period_end': attributes.get('renews_at')
+                }).execute()
+                
+                print(f"Subscription record created: {response.data if hasattr(response, 'data') else 'Unknown'}")
+                return True
+            except Exception as e:
+                print(f"Error creating subscription record: {str(e)}")
+                return False
         except Exception as e:
+            import traceback
             print(f"Error handling subscription created: {str(e)}")
+            print(traceback.format_exc())
+            return False
+
+# Add a new method to handle orders (which may contain user_id in custom_data)
+    def _handle_order_created(self, payload):
+        """Handle order_created webhook event which may contain subscription info"""
+        try:
+            # Log the order payload
+            print(f"Processing order_created webhook: {json.dumps(payload, indent=2)}")
+            
+            order_data = payload.get('data', {})
+            attributes = order_data.get('attributes', {})
+            
+            # Check if this order created a subscription
+            first_subscription_id = attributes.get('first_subscription_id')
+            if not first_subscription_id:
+                print("Order did not create a subscription")
+                return True  # Successfully processed (no action needed)
+            
+            # Extract user_id from custom_data
+            custom_data = attributes.get('custom_data', {})
+            user_id = None
+            
+            # Try to get user_id from different possible locations
+            if custom_data and 'user_id' in custom_data:
+                user_id = custom_data.get('user_id')
+            
+            # Also check in meta or other locations
+            if not user_id and 'meta' in payload:
+                meta = payload.get('meta', {})
+                if 'custom' in meta:
+                    user_id = meta.get('custom', {}).get('user_id')
+            
+            # If user_id found, check if a subscription record already exists
+            if user_id:
+                print(f"Found user_id in order: {user_id}")
+                
+                # Check if subscription record exists
+                response = self.supabase.table('subscriptions').select('*')\
+                    .eq('subscription_id', first_subscription_id).execute()
+                
+                if response.data and len(response.data) > 0:
+                    print(f"Subscription record already exists for subscription {first_subscription_id}")
+                    return True
+                
+                # If not, create a new subscription record
+                print(f"Creating subscription record for user {user_id} and subscription {first_subscription_id}")
+                
+                # Get customer_id from order
+                customer_id = attributes.get('customer_id')
+                
+                # Get variant_id if available
+                variant_id = None
+                order_items = attributes.get('order_items', [])
+                if order_items and len(order_items) > 0:
+                    variant_id = order_items[0].get('variant_id')
+                
+                # Create subscription record
+                subscription_data = {
+                    'user_id': user_id,
+                    'subscription_id': first_subscription_id,
+                    'customer_id': customer_id,
+                    'plan_id': variant_id,
+                    'status': 'active'
+                }
+                
+                # Only add renewal date if available
+                if 'renewed_at' in attributes:
+                    subscription_data['current_period_end'] = attributes.get('renewed_at')
+                
+                response = self.supabase.table('subscriptions').insert(subscription_data).execute()
+                print(f"Subscription record created: {response.data if hasattr(response, 'data') else 'Unknown'}")
+                
+                return True
+            
+            print("No user_id found in order")
+            return False
+        
+        except Exception as e:
+            import traceback
+            print(f"Error handling order created: {str(e)}")
+            print(traceback.format_exc())
             return False
     
     def _handle_subscription_updated(self, payload):

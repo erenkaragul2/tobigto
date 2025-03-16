@@ -238,7 +238,33 @@
                         <li><i class="fas fa-check feature-check"></i> API access</li>
                         <li><i class="fas fa-times feature-cross"></i> Custom integrations</li>
                     </ul>
-                    
+                    <div class="card my-4">
+                        <div class="card-header bg-light">
+                          <h5 class="mb-0">Using Direct Checkout Links</h5>
+                        </div>
+                        <div class="card-body">
+                          <p>If you're experiencing issues with the embedded checkout, you can use direct links to Lemon Squeezy. For these to work properly:</p>
+                          
+                          <ol>
+                            <li>Make sure you're logged in to your account</li>
+                            <li>Use the direct links from this page (these contain your user ID)</li>
+                            <li>After successful payment, return to this site using the "Return to site" link</li>
+                          </ol>
+                          
+                          <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Important:</strong> After completing your purchase, you may need to wait a few moments for your subscription to be processed.
+                          </div>
+                        </div>
+                      </div>
+                      <a href="https://corouted.lemonsqueezy.com/buy/6e99d986-7f2a-4f05-b808-70b71d5e04a9?checkout[email]={{ user.email|urlencode }}&checkout[custom][user_id]={{ user.id|urlencode }}&checkout[success_url]={{ url_for('subscription.success', _external=True)|urlencode }}" 
+                      class="btn btn-outline-primary">
+                       {% if current_subscription %}
+                           Switch Plan (Direct Link)
+                       {% else %}
+                           Start Free Trial (Direct Link)
+                       {% endif %}
+                        </a>
                     <div class="d-grid gap-2 mt-4">
                         {% if current_subscription and current_subscription.plan_id == plans.professional.variant_id %}
                             <div class="current-plan-badge">Current Plan</div>
