@@ -758,7 +758,7 @@ def templates():
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    # Get file from request
+    # Check if the post request has the file part
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file part'})
     
@@ -770,11 +770,7 @@ def upload_file():
         # Get user ID from session
         user_id = session['user']['id']
         
-        # Read file into memory for processing
-        file_content = file.read()
-        file.stream.seek(0)  # Reset for reading again
-        
-        # Process file with pandas (similar to original code)
+        # Process file with pandas
         file_ext = os.path.splitext(file.filename)[1].lower()
         
         if file_ext in ['.xlsx', '.xls']:
@@ -784,69 +780,45 @@ def upload_file():
         else:
             return jsonify({'success': False, 'error': 'Unsupported file format'})
         
-        # Map columns (same as original)
-        column_mapping = {}
-        for col in data_df.columns:
-            col_lower = col.lower()
-            if 'name' in col_lower or 'company' in col_lower:
-                column_mapping[col] = 'company_name'
-            elif ('coord' in col_lower and not ('x_' in col_lower or 'y_' in col_lower)) or \
-                ('location' in col_lower and not ('address' in col_lower)):
-                column_mapping[col] = 'coordinates'
-            elif 'demand' in col_lower or 'quantity' in col_lower or 'amount' in col_lower:
-                column_mapping[col] = 'demand'
-            elif 'address' in col_lower:
-                column_mapping[col] = 'address'
-            elif 'x_' in col_lower or 'lat' in col_lower:
-                column_mapping[col] = 'x_coord'
-            elif 'y_' in col_lower or 'lon' in col_lower or 'lng' in col_lower:
-                column_mapping[col] = 'y_coord'
+        # Convert DataFrame to JSON
+        data_json = data_df.to_json(orient='records')
         
-        # Rename columns
-        if column_mapping:
-            data_df.rename(columns=column_mapping, inplace=True)
+        # Use the secure RPC function instead of direct table insert
+        response = supabase.rpc(
+            'insert_user_upload', 
+            {
+                'p_user_id': user_id,
+                'p_file_name': file.filename,
+                'p_file_type': file.content_type,
+                'p_data': json.loads(data_json),  # Must be parsed as Python dict
+                'p_row_count': len(data_df),
+                'p_columns': data_df.columns.tolist()
+            }
+        ).execute()
         
-        # Upload file to Supabase
-        import uuid
-        from werkzeug.utils import secure_filename
+        if not response.data:
+            return jsonify({'success': False, 'error': 'Failed to store upload data'}), 500
+            
+        # Extract the returned UUID
+        upload_id = response.data
         
-        # Create a secure unique filename
-        original_filename = secure_filename(file.filename)
-        storage_filename = f"{uuid.uuid4()}{file_ext}"
-        storage_path = f"files/{user_id}/{storage_filename}"
+        # Store upload ID in session
+        session['current_upload_id'] = upload_id
         
-        # Upload to Supabase Storage
-        supabase.storage.from_('cvrp-uploads').upload(
-            storage_path,
-            file_content,
-            {'content-type': file.content_type}
-        )
-        
-        # Store data in session with reference to Supabase path
-        session['data'] = {
-            'filename': file.filename,
-            'storage_path': storage_path,  # Store the Supabase path
-            'columns': data_df.columns.tolist(),
-            'dataframe': data_df.to_json(orient='split')
-        }
-        
-        # Return headers to client
+        # Return data preview to client
         return jsonify({
-            'success': True, 
+            'success': True,
             'message': f'File {file.filename} uploaded successfully',
+            'upload_id': upload_id,
             'columns': data_df.columns.tolist(),
-            'previewData': data_df.head(20).to_dict(orient='records'),
-            'file_path': storage_path  # Return the storage path for reference
+            'previewData': data_df.head(20).to_dict(orient='records')
         })
         
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"Error in file upload: {error_details}")
+        print(f"Error in file upload: {str(e)}")
         return jsonify({
             'success': False, 
-            'error': str(e),
-            'details': error_details
+            'error': str(e)
         })
 
 @app.route('/generate_random', methods=['POST'])
@@ -928,7 +900,7 @@ def generate_random():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/process_data', methods=['POST'])
+app.route('/process_data', methods=['POST'])
 @with_db_connection(use_service_role=True)  # Use service role to bypass RLS
 def process_data():
     try:
@@ -946,17 +918,92 @@ def process_data():
         use_google_maps = data.get('use_google_maps', False)
         google_maps_options = data.get('google_maps_options', {})
         
-        # Validate the data exists in session
-        if 'coordinates' not in session:
+        # Find the data in session - check both possible storage locations
+        coordinates = None
+        company_names = None
+        demands = None
+        
+        print("Session keys:", list(session.keys()))
+        
+        # Check if data is from file upload (session['data'])
+        if 'data' in session and session['data']:
+            print("Found data from file upload in session['data']")
+            try:
+                # Parse the dataframe from JSON
+                import pandas as pd
+                import json
+                
+                df_data = json.loads(session['data']['dataframe'])
+                df = pd.DataFrame(df_data['data'], columns=df_data['columns'])
+                
+                # Extract coordinates based on column names
+                if 'X' in df.columns and 'Y' in df.columns:
+                    coordinates = df[['X', 'Y']].values.tolist()
+                elif 'x_coord' in df.columns and 'y_coord' in df.columns:
+                    coordinates = df[['x_coord', 'y_coord']].values.tolist()
+                elif 'coordinates' in df.columns:
+                    # Handle coordinates as a single column "(lat, lng)"
+                    coordinates = []
+                    for coord_str in df['coordinates']:
+                        try:
+                            if isinstance(coord_str, str):
+                                coord_str = coord_str.strip('() ')
+                                parts = coord_str.split(',')
+                                if len(parts) == 2:
+                                    lat = float(parts[0].strip())
+                                    lng = float(parts[1].strip())
+                                    coordinates.append([lat, lng])
+                        except Exception as e:
+                            print(f"Error parsing coordinate: {coord_str}: {e}")
+                
+                # Extract company names
+                if 'company_name' in df.columns:
+                    company_names = df['company_name'].tolist()
+                elif 'Name' in df.columns:
+                    company_names = df['Name'].tolist()
+                
+                # Extract demands
+                if 'demand' in df.columns:
+                    demands = df['demand'].tolist()
+                elif 'Demand' in df.columns:
+                    demands = df['Demand'].tolist()
+                
+                print(f"Extracted from dataframe: coords={len(coordinates) if coordinates else 0}, " +
+                     f"names={len(company_names) if company_names else 0}, demands={len(demands) if demands else 0}")
+                     
+            except Exception as e:
+                print(f"Error processing session['data']: {str(e)}")
+        
+        # Check if data is from random generation (session['problem_data'])
+        elif 'problem_data' in session and session['problem_data']:
+            print("Found data from random generation in session['problem_data']")
+            problem_data = session['problem_data']
+            coordinates = problem_data.get('coordinates', [])
+            company_names = problem_data.get('company_names', [])
+            demands = problem_data.get('demands', [])
+            print(f"Extracted from problem_data: coords={len(coordinates)}, " +
+                 f"names={len(company_names) if company_names else 0}, demands={len(demands) if demands else 0}")
+        
+        # Direct session access (fallback - older approach)
+        elif all(k in session for k in ['coordinates', 'company_names', 'demands']):
+            print("Found data directly in session")
+            coordinates = session.get('coordinates', [])
+            company_names = session.get('company_names', [])
+            demands = session.get('demands', [])
+        
+        # Validate that we have the required data
+        if not coordinates or len(coordinates) == 0:
             return jsonify({
                 'success': False,
-                'error': 'No data available. Please upload data first.'
+                'error': 'No coordinate data found. Please upload data or generate a random problem first.'
             }), 400
-            
-        # Get data from session
-        coordinates = session.get('coordinates', [])
-        company_names = session.get('company_names', [])
-        demands = session.get('demands', [])
+        
+        # Store data in session keys for other functions to use
+        session['coordinates'] = coordinates
+        session['company_names'] = company_names or [f"Node {i}" if i != depot else "Depot" for i in range(len(coordinates))]
+        session['demands'] = demands or [0 if i == depot else 5 for i in range(len(coordinates))]
+        
+        print(f"Session data prepared: {len(coordinates)} coordinates, {len(session['demands'])} demands")
         
         # Connect to database with service role credentials
         # g.db is provided by the @with_db_connection decorator
@@ -968,7 +1015,7 @@ def process_data():
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
-                'anonymous',  # Use a default user ID or get from session if you have authentication
+                session.get('user', {}).get('id', 'anonymous'),  # Get user ID if available
                 depot,
                 vehicle_capacity,
                 max_vehicles,
@@ -979,7 +1026,10 @@ def process_data():
             config_id = cursor.fetchone()['id']
             
             # Associate coordinates, names, and demands with this config
-            for i, (coord, name, demand) in enumerate(zip(coordinates, company_names, demands)):
+            for i, coord in enumerate(coordinates):
+                name = session['company_names'][i] if i < len(session['company_names']) else f"Node {i}"
+                demand = session['demands'][i] if i < len(session['demands']) else (0 if i == depot else 5)
+                
                 cursor.execute("""
                     INSERT INTO nodes
                     (config_id, node_idx, lat, lon, name, demand)
@@ -1018,6 +1068,10 @@ def process_data():
                 row.append(distance_matrix[i][j])
             matrix_preview.append(row)
         
+        # Update problem_data if it exists
+        if 'problem_data' in session:
+            session['problem_data']['distance_matrix'] = distance_matrix
+        
         return jsonify({
             'success': True,
             'message': 'Data processed successfully',
@@ -1031,6 +1085,7 @@ def process_data():
         
     except Exception as e:
         # Print full traceback for debugging
+        import traceback
         traceback.print_exc()
         
         # Check for specific database errors
