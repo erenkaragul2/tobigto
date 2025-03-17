@@ -492,6 +492,17 @@ document.addEventListener('DOMContentLoaded', function() {
             showAlert(ui.solveInfoAlert, 'Please upload data first', 'danger');
             return;
         }
+        console.log("Process data called - checking for uploaded data");
+    
+        // Check if we have data loaded from an upload
+        if (window.appState.dataLoaded) {
+            console.log("Data was previously loaded, sending to server");
+        } else {
+            console.log("WARNING: No data loaded, processing may fail");
+        }
+        
+        // Disable the javascript fallback to prevent it from generating dummy data
+        window.useClientSideFallback = false;
     
         const depot = parseInt(ui.depotInput.value) || 0;
         const capacity = parseInt(ui.capacityInput.value) || 20;
@@ -1577,7 +1588,15 @@ let subscriptionInfo = {
             });
         };
     });
-    
+    // Add to your main.js
+    document.getElementById('debugDataBtn').addEventListener('click', function() {
+        fetch('/debug-session-data')
+            .then(response => response.json())
+            .then(data => {
+                console.log("Session data:", data);
+                alert("Session data printed to console. Check browser developer tools.");
+            });
+    });
     // Initialize max vehicles input
     updateMaxVehiclesInput();
   });

@@ -726,7 +726,20 @@ def profile():
                 flash(f"Error updating profile: {str(e)}", "danger")
     
     return render_template('profile.html', user=user)
-
+@app.route('/debug-session-data')
+@login_required
+def debug_session_data():
+    """Debug endpoint to view session data"""
+    return jsonify({
+        'session_keys': list(session.keys()),
+        'data_present': 'data' in session,
+        'problem_data_present': 'problem_data' in session,
+        'coordinates_present': 'coordinates' in session,
+        'data_info': {
+            'coordinates_length': len(session.get('data', {}).get('coordinates', [])) if 'data' in session else 0,
+            'demands_length': len(session.get('data', {}).get('demands', [])) if 'data' in session else 0,
+        }
+    })
 @app.route('/logout-all-sessions', methods=['POST'])
 @login_required
 def logout_all_sessions():
@@ -796,6 +809,34 @@ def upload_file():
             }
         ).execute()
         
+        if result['success']:
+            # IMPORTANT: Store the data in session for later processing
+            session['data'] = {
+                'coordinates': result['coordinates'],
+                'company_names': result['company_names'],
+                'demands': result['demands'],
+                'dataframe': json.dumps({
+                    'data': result['data'][:20],  # Limit to 20 rows for session size
+                    'columns': result['columns']
+                })
+            }
+            session.modified = True  # Force session update
+            
+            # Debug: Print what we're storing in session
+            print(f"Storing in session: {len(result['coordinates'])} coords, " +
+                f"{len(result['demands'])} demands")
+                
+            return jsonify({
+                'success': True,
+                'message': f'Successfully processed {filename}',
+                'columns': result['columns'],
+                'previewData': result['data'][:10],
+                'nodes': result['nodes'],
+                'coordinates': result['coordinates'],
+                'company_names': result['company_names'],
+                'demands': result['demands'],
+                'distanceMatrixPreview': result.get('distance_matrix_preview', [])
+            })
         if not response.data:
             return jsonify({'success': False, 'error': 'Failed to store upload data'}), 500
             
@@ -813,12 +854,13 @@ def upload_file():
             'columns': data_df.columns.tolist(),
             'previewData': data_df.head(20).to_dict(orient='records')
         })
-        
+    
     except Exception as e:
         print(f"Error in file upload: {str(e)}")
         return jsonify({
             'success': False, 
             'error': str(e)
+    
         })
 
 @app.route('/generate_random', methods=['POST'])
@@ -900,7 +942,7 @@ def generate_random():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-app.route('/process_data', methods=['POST'])
+@app.route('/process_data', methods=['POST'])
 @with_db_connection(use_service_role=True)  # Use service role to bypass RLS
 def process_data():
     try:
@@ -918,6 +960,15 @@ def process_data():
         use_google_maps = data.get('use_google_maps', False)
         google_maps_options = data.get('google_maps_options', {})
         
+          # Debug: Print session keys and request parameters
+        print("DEBUG - Process data called with:")
+        print(f"Session keys: {list(session.keys())}")
+        print(f"Parameters: depot={depot}, capacity={vehicle_capacity}, vehicles={max_vehicles}")
+        print(f"Use Google Maps: {use_google_maps}")
+        
+        # Clear out any previous problem_data
+        if 'problem_data' in session:
+            del session['problem_data']
         # Find the data in session - check both possible storage locations
         coordinates = None
         company_names = None

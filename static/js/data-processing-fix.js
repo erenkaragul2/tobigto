@@ -74,6 +74,13 @@ document.addEventListener('DOMContentLoaded', function() {
             vehicle_capacity: vehicle_capacity,
             max_vehicles: max_vehicles
         });
+        if (!window.appState.dataLoaded || window.useClientSideFallback === true) {
+            console.log("Using client-side fallback data generation");
+            // ... fallback code generating dummy data ...
+        } else {
+            console.log("Using server-side data processing (not generating fallback data)");
+            return; // Skip the fallback and let the server handle it
+        }
         
         // Check if we have loaded data
         if (!window.appState.dataLoaded) {
