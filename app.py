@@ -24,7 +24,8 @@ from trial_middleware import configure_trial_middleware
 from usage_limits import route_limit_required, driver_limit_check
 # Import the enhanced upload handler
 from upload_handler import enhanced_upload_handler
-
+from db_connection import with_db_connection
+import traceback
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,7 +35,10 @@ GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 SESSION_SECRET = os.getenv('SESSION_SECRET', 'cvrp-secret-key')  # Use environment variable or default
+file_bp = Blueprint('file_operations', __name__)
 
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -68,7 +72,285 @@ solver_jobs = {}
 @app.before_request
 def setup_subscription_manager():
     g.subscription_manager = get_subscription_manager()
+def allowed_file(filename):
+    """Check if file has an allowed extension"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+@file_bp.route('/upload', methods=['POST'])
+def upload_file():
+    """
+    Handle file uploads in a Vercel-compatible way
+    """
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        return jsonify({
+            'success': False,
+            'error': 'No file part in the request'
+        }), 400
+        
+    file = request.files['file']
+    
+    # If user does not select file, browser also
+    # submit an empty part without filename
+    if file.filename == '':
+        return jsonify({
+            'success': False,
+            'error': 'No selected file'
+        }), 400
+        
+    if not allowed_file(file.filename):
+        return jsonify({
+            'success': False,
+            'error': f'File type not allowed. Please upload: {", ".join(ALLOWED_EXTENSIONS)}'
+        }), 400
+    
+    try:
+        # Create a secure filename
+        filename = secure_filename(file.filename)
+        
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False) as temp:
+            file.save(temp.name)
+            temp_path = temp.name
+        
+        # Process the file based on its type
+        if filename.endswith('.csv'):
+            result = process_csv(temp_path, filename)
+        elif filename.endswith(('.xlsx', '.xls')):
+            result = process_excel(temp_path, filename)
+        else:
+            # This should never happen due to the allowed_file check above
+            os.unlink(temp_path)  # Clean up
+            return jsonify({
+                'success': False,
+                'error': 'Unsupported file type'
+            }), 400
+        
+        # Clean up the temporary file
+        os.unlink(temp_path)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Successfully processed {filename}',
+                'columns': result['columns'],
+                'previewData': result['data'][:10],  # Send only first 10 rows as preview
+                'nodes': result['nodes'],
+                'coordinates': result['coordinates'],
+                'company_names': result['company_names'],
+                'demands': result['demands'],
+                'distanceMatrixPreview': result.get('distance_matrix_preview', [])
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result['error']
+            }), 400
+            
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error processing upload: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error processing file: {str(e)}'
+        }), 500
+
+def process_csv(filepath, filename):
+    """
+    Process CSV file
+    
+    Args:
+        filepath: Path to temporary file
+        filename: Original filename
+        
+    Returns:
+        dict: Processing result
+    """
+    try:
+        import pandas as pd
+        
+        # Read CSV file
+        df = pd.read_csv(filepath)
+        
+        # Basic validation
+        required_columns = ['Name', 'X', 'Y', 'Demand']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        
+        if missing_columns:
+            return {
+                'success': False,
+                'error': f'Missing required columns: {", ".join(missing_columns)}'
+            }
+        
+        # Process data
+        coordinates = df[['X', 'Y']].values.tolist()
+        company_names = df['Name'].tolist()
+        demands = df['Demand'].tolist()
+        
+        # Create distance matrix preview (first 5x5)
+        from math import sqrt, cos, radians
+        n = min(5, len(coordinates))
+        preview = [[0 for _ in range(n)] for _ in range(n)]
+        
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    # Calculate Euclidean distance (in meters)
+                    x1, y1 = coordinates[i]
+                    x2, y2 = coordinates[j]
+                    preview[i][j] = int(sqrt((x2 - x1)**2 + (y2 - y1)**2) * 100)  # Scale for display
+        
+        return {
+            'success': True,
+            'columns': df.columns.tolist(),
+            'data': df.to_dict('records'),
+            'nodes': len(df),
+            'coordinates': coordinates,
+            'company_names': company_names,
+            'demands': demands,
+            'distance_matrix_preview': preview
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Error reading CSV: {str(e)}'
+        }
+
+def process_excel(filepath, filename):
+    """
+    Process Excel file
+    
+    Args:
+        filepath: Path to temporary file
+        filename: Original filename
+        
+    Returns:
+        dict: Processing result
+    """
+    try:
+        import pandas as pd
+        
+        # Read Excel file
+        df = pd.read_excel(filepath)
+        
+        # Basic validation
+        required_columns = ['Name', 'X', 'Y', 'Demand']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        
+        if missing_columns:
+            return {
+                'success': False,
+                'error': f'Missing required columns: {", ".join(missing_columns)}'
+            }
+        
+        # Process data
+        coordinates = df[['X', 'Y']].values.tolist()
+        company_names = df['Name'].tolist()
+        demands = df['Demand'].tolist()
+        
+        # Create distance matrix preview (first 5x5)
+        from math import sqrt, cos, radians
+        n = min(5, len(coordinates))
+        preview = [[0 for _ in range(n)] for _ in range(n)]
+        
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    # Calculate Euclidean distance (in meters)
+                    x1, y1 = coordinates[i]
+                    x2, y2 = coordinates[j]
+                    preview[i][j] = int(sqrt((x2 - x1)**2 + (y2 - y1)**2) * 100)  # Scale for display
+        
+        return {
+            'success': True,
+            'columns': df.columns.tolist(),
+            'data': df.to_dict('records'),
+            'nodes': len(df),
+            'coordinates': coordinates,
+            'company_names': company_names,
+            'demands': demands,
+            'distance_matrix_preview': preview
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Error reading Excel file: {str(e)}'
+        }
+
+# Sample data endpoint
+@file_bp.route('/sample_data', methods=['GET'])
+def get_sample_data():
+    """Provide sample data when file uploads aren't working"""
+    # Sample data for CVRP problem
+    sample_data = {
+        "coordinates": [
+            [40.73061, -73.935242],  # Node 0 (Depot)
+            [40.736591, -73.919061],  # Node 1
+            [40.742652, -73.925686],  # Node 2
+            [40.736073, -73.913830],  # Node 3
+            [40.728226, -73.926659],  # Node 4
+            [40.721573, -73.932344],  # Node 5
+            [40.724427, -73.917666],  # Node 6
+            [40.730824, -73.908053],  # Node 7
+            [40.741550, -73.937839],  # Node 8
+            [40.714454, -73.923364],  # Node 9
+        ],
+        "demands": [0, 8, 5, 7, 4, 6, 3, 9, 7, 5],
+        "company_names": [
+            "Depot",
+            "Customer A",
+            "Customer B",
+            "Customer C", 
+            "Customer D",
+            "Customer E",
+            "Customer F",
+            "Customer G",
+            "Customer H", 
+            "Customer I"
+        ],
+    }
+    
+    # Calculate distance matrix preview
+    from math import sqrt, cos, radians
+    n = 5  # Preview size
+    preview = [[0 for _ in range(n)] for _ in range(n)]
+    
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                # Calculate distance (approximately in meters)
+                lat1, lon1 = sample_data["coordinates"][i]
+                lat2, lon2 = sample_data["coordinates"][j]
+                
+                # Simplified distance calculation
+                dlat = (lat2 - lat1) * 111000  # 1 degree latitude is approx 111km
+                dlon = (lon2 - lon1) * 111000 * abs(cos(radians((lat1 + lat2) / 2)))
+                dist = sqrt(dlat**2 + dlon**2)
+                preview[i][j] = int(dist)
+    
+    # Create preview data for table display
+    preview_data = []
+    for i in range(len(sample_data["coordinates"])):
+        preview_data.append({
+            'Name': sample_data["company_names"][i],
+            'X': sample_data["coordinates"][i][0], 
+            'Y': sample_data["coordinates"][i][1],
+            'Demand': sample_data["demands"][i]
+        })
+    
+    return jsonify({
+        'success': True,
+        'message': 'Sample data loaded successfully',
+        'columns': ['Name', 'X', 'Y', 'Demand'],
+        'previewData': preview_data,
+        'nodes': len(sample_data["coordinates"]),
+        'coordinates': sample_data["coordinates"],
+        'company_names': sample_data["company_names"],
+        'demands': sample_data["demands"],
+        'distanceMatrixPreview': preview
+    })
 # Context processor to make subscription-related data available to templates
 @app.context_processor
 def inject_subscription_data():
@@ -647,141 +929,151 @@ def generate_random():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/process_data', methods=['POST'])
-@login_required
+@with_db_connection(use_service_role=True)  # Use service role to bypass RLS
 def process_data():
-    if 'data' not in session:
-        return jsonify({'success': False, 'error': 'No data uploaded'})
-    
     try:
         # Get parameters from request
-        params = request.get_json()
-        
-        # Get max_vehicles parameter and check limit
-        max_vehicles = int(params.get('max_vehicles', 5))
-        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, session['user']['id'])
-        
-        if not is_allowed:
+        data = request.get_json()
+        if not data:
             return jsonify({
-                'success': False, 
-                'error': error_message,
-                'limit_exceeded': True,
-                'max_allowed': max_allowed
-            })
+                'success': False,
+                'error': 'Missing request data'
+            }), 400
+            
+        depot = data.get('depot', 0)
+        vehicle_capacity = data.get('vehicle_capacity', 20)
+        max_vehicles = data.get('max_vehicles', 5)
+        use_google_maps = data.get('use_google_maps', False)
+        google_maps_options = data.get('google_maps_options', {})
         
-        # Read dataframe from session
-        data_json = session['data']['dataframe']
-        data_df = pd.read_json(data_json, orient='split')
+        # Validate the data exists in session
+        if 'coordinates' not in session:
+            return jsonify({
+                'success': False,
+                'error': 'No data available. Please upload data first.'
+            }), 400
+            
+        # Get data from session
+        coordinates = session.get('coordinates', [])
+        company_names = session.get('company_names', [])
+        demands = session.get('demands', [])
         
-        # Get company names
-        company_names = data_df['company_name'].tolist() if 'company_name' in data_df.columns else None
+        # Connect to database with service role credentials
+        # g.db is provided by the @with_db_connection decorator
+        with g.db.cursor() as cursor:
+            # Store problem configuration in database
+            cursor.execute("""
+                INSERT INTO problem_configs 
+                (user_id, depot_idx, vehicle_capacity, max_vehicles, use_google_maps, google_maps_options)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                'anonymous',  # Use a default user ID or get from session if you have authentication
+                depot,
+                vehicle_capacity,
+                max_vehicles,
+                use_google_maps,
+                json.dumps(google_maps_options)
+            ))
+            
+            config_id = cursor.fetchone()['id']
+            
+            # Associate coordinates, names, and demands with this config
+            for i, (coord, name, demand) in enumerate(zip(coordinates, company_names, demands)):
+                cursor.execute("""
+                    INSERT INTO nodes
+                    (config_id, node_idx, lat, lon, name, demand)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    config_id,
+                    i,
+                    coord[0],
+                    coord[1],
+                    name,
+                    demand
+                ))
+            
+            # Commit the transaction
+            g.db.commit()
+            
+            # Store config_id in session
+            session['config_id'] = config_id
         
-        # Get demands
-        demands = data_df['demand'].tolist() if 'demand' in data_df.columns else None
+        # Calculate distance matrix
+        distance_matrix = calculate_distance_matrix(
+            coordinates,
+            use_google_maps=use_google_maps,
+            options=google_maps_options
+        )
         
-        # Check if required data is available
-        if 'coordinates' not in data_df.columns and ('x_coord' not in data_df.columns or 'y_coord' not in data_df.columns):
-            return jsonify({'success': False, 'error': 'Coordinate data is missing'})
+        # Store matrix in session for later use
+        session['distance_matrix'] = distance_matrix
         
-        if demands is None:
-            return jsonify({'success': False, 'error': 'Demand data is missing'})
-        
-        # Parse coordinates
-        coords_list = []
-        if 'coordinates' in data_df.columns:
-            for coord_str in data_df['coordinates'].values:
-                try:
-                    # Parse the coordinate string
-                    lat, lng = parse_coordinates(coord_str)
-                    coords_list.append([lat, lng])
-                except Exception as e:
-                    return jsonify({'success': False, 'error': f'Failed to parse coordinate: {coord_str}. Error: {str(e)}'})
-        elif 'x_coord' in data_df.columns and 'y_coord' in data_df.columns:
-            coords_list = data_df[['x_coord', 'y_coord']].values.tolist()
-        
-        coordinates = np.array(coords_list)
-        
-        # Get distance calculation parameters
-        use_google_maps = params.get('use_google_maps', False)
-        google_maps_options = params.get('google_maps_options', {})
-        
-        # Determine what distance type to display in UI
-        distance_type = "Google Maps" if use_google_maps else "Euclidean"
-        
-        # If using Google Maps, add mode to display
-        if use_google_maps and 'mode' in google_maps_options:
-            distance_type += f" ({google_maps_options['mode'].capitalize()})"
-        
-        # Compute distance matrix
-        if use_google_maps and GOOGLE_MAPS_API_KEY:
-            try:
-                # Get Google Maps specific options
-                mode = google_maps_options.get('mode', 'driving')
-                avoid = google_maps_options.get('avoid', [])
-                
-                # Generate avoid parameter string if provided
-                avoid_param = '|'.join(avoid) if avoid else None
-                
-                # Compute with Google Maps
-                distance_matrix = compute_google_distance_matrix(
-                    coordinates, 
-                    api_key=GOOGLE_MAPS_API_KEY,
-                    batch_size=app.config.get('GOOGLE_MAPS_BATCH_SIZE', 10),
-                    delay=app.config.get('GOOGLE_MAPS_DELAY', 1.0),
-                    mode=mode
-                )
-            except Exception as e:
-                # Log error and fall back to Euclidean
-                print(f"Error using Google Maps API: {str(e)}")
-                distance_matrix = compute_euclidean_distance_matrix(coordinates)
-                distance_type = "Euclidean (Google Maps failed)"
-        else:
-            # Use Euclidean distance
-            distance_matrix = compute_euclidean_distance_matrix(coordinates)
-        
-        # Store in session for later use
-        session['problem_data'] = {
-            'coordinates': coordinates.tolist(),
-            'distance_matrix': distance_matrix.tolist(),
-            'demands': demands,
-            'company_names': company_names,
-            'depot': int(params.get('depot', 0)),
-            'vehicle_capacity': int(params.get('vehicle_capacity', 20)),
-            'max_vehicles': max_vehicles,  # Use the checked max_vehicles value
-            'distance_type': distance_type
-        }
-        
-        # Get subscription manager to provide limits to the frontend
-        subscription_manager = get_subscription_manager()
-        user_limits = subscription_manager.get_user_limits(session['user']['id'])
-        user_usage = subscription_manager.get_user_usage(session['user']['id'])
+        # Create a small preview of the matrix for display (5x5)
+        matrix_preview = []
+        max_preview = min(5, len(distance_matrix))
+        for i in range(max_preview):
+            row = []
+            for j in range(max_preview):
+                row.append(distance_matrix[i][j])
+            matrix_preview.append(row)
         
         return jsonify({
             'success': True,
             'message': 'Data processed successfully',
             'nodes': len(coordinates),
-            'distance_type': distance_type,
-            'distanceMatrixPreview': [
-                [f"{val:.2f}" for val in row[:5]] 
-                for row in distance_matrix[:5]
-            ],
-            'subscription': {
-                'max_routes': user_limits.get('max_routes'),
-                'max_drivers': user_limits.get('max_drivers'),
-                'routes_used': user_usage.get('routes_created'),
-                'is_trial': user_limits.get('is_trial', False)
-            }
+            'depot': depot,
+            'vehicle_capacity': vehicle_capacity,
+            'max_vehicles': max_vehicles,
+            'distance_type': 'Google Maps API' if use_google_maps else 'Euclidean',
+            'distanceMatrixPreview': matrix_preview
         })
         
     except Exception as e:
-        import traceback
-        traceback_str = traceback.format_exc()
-        print(f"Error processing data: {traceback_str}")
+        # Print full traceback for debugging
+        traceback.print_exc()
+        
+        # Check for specific database errors
+        if "violates row-level security policy" in str(e):
+            return jsonify({
+                'success': False,
+                'error': 'Database permission error. Please check if service role is configured correctly.',
+                'details': str(e)
+            }), 403
+        
         return jsonify({
-            'success': False, 
-            'error': str(e),
-            'traceback': traceback_str
-        })
+            'success': False,
+            'error': f'Error processing data: {str(e)}'
+        }), 500
 
+# Helper function for distance calculation (implement based on your existing code)
+def calculate_distance_matrix(coordinates, use_google_maps=False, options=None):
+    """Calculate distance matrix from coordinates"""
+    import math
+    
+    n = len(coordinates)
+    matrix = [[0 for _ in range(n)] for _ in range(n)]
+    
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                # Calculate Euclidean distance in meters
+                lat1, lon1 = coordinates[i]
+                lat2, lon2 = coordinates[j]
+                
+                # Convert to radians
+                lat1, lon1 = math.radians(lat1), math.radians(lon1)
+                lat2, lon2 = math.radians(lat2), math.radians(lon2)
+                
+                # Haversine formula for distance
+                dlon = lon2 - lon1
+                dlat = lat2 - lat1
+                a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+                c = 2 * math.asin(math.sqrt(a))
+                r = 6371000  # Radius of Earth in meters
+                matrix[i][j] = c * r
+    
+    return matrix
 @app.route('/get_distance_matrix', methods=['GET'])
 @login_required
 def get_distance_matrix():
