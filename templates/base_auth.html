@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CVRP Solver{% endblock %}</title>
+    <title>{% block title %}RouteOptimize{% endblock %}</title>
     <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
@@ -12,14 +12,67 @@
     <link href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" rel="stylesheet">
     <!-- Custom CSS -->
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <!-- Logo styling -->
+    <link href="{{ url_for('static', filename='css/logo.css') }}" rel="stylesheet">
+    <style>
+        .app-logo {
+            display: flex;
+            align-items: center;
+            font-weight: 700;
+            color: #fff;
+            text-decoration: none;
+        }
+        .app-logo:hover {
+            color: #fff;
+        }
+        .logo-icon {
+            background-color: #1a56db;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-size: 18px;
+        }
+        .logo-text {
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+        .logo-text span {
+            display: block;
+            font-size: 0.7rem;
+            opacity: 0.8;
+            font-weight: 400;
+        }
+        
+        .nav-pills .nav-link.active {
+            background-color: #1a56db;
+        }
+        
+        .navbar-dark {
+            background-color: #111827;
+        }
+        
+        .btn-primary {
+            background-color: #1a56db;
+            border-color: #1a56db;
+        }
+        
+        .btn-outline-light:hover {
+            color: #1a56db;
+        }
+    </style>
     {% block head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <i class="fas fa-truck fa-fw me-2"></i>CVRP Solver
-            </a>
+                <img src="{{ url_for('static', filename='imgs/your-logo.png') }}" alt="RouteOptimize" height="40">
+              </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -32,17 +85,25 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('solver_app') }}">Route Solver</a>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-user-circle me-1"></i> {{ user.email }}
+                            <i class="fas fa-user-circle me-1"></i> 
+                            {% if user.email %}{{ user.email }}{% else %}Account{% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('profile') }}">Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('subscription.pricing') }}">Subscription</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
                         </ul>
                     </li>
                     {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('subscription.pricing') }}">Pricing</a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('login') }}">Login</a>
                     </li>
@@ -80,7 +141,7 @@
 
     <footer class="bg-light py-3 mt-5">
         <div class="container text-center">
-            <p class="mb-0">CVRP Solver Web Application &copy; 2025</p>
+            <p class="mb-0">RouteOptimize &copy; 2025</p>
         </div>
     </footer>
     {% if trial_expired %}

@@ -1,0 +1,93 @@
+/* Logo styling for RouteOptimize application */
+
+/* Navbar version of the logo */
+.app-logo {
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+}
+.app-logo:hover {
+    color: #fff;
+    opacity: 0.9;
+    text-decoration: none;
+}
+
+/* Dark version for use on light backgrounds */
+.app-logo-dark {
+    color: #1a56db;
+}
+.app-logo-dark:hover {
+    color: #1a56db;
+}
+
+/* Logo icon styling */
+.logo-icon {
+    background-color: #1a56db;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    font-size: 18px;
+    transition: transform 0.2s ease;
+}
+
+.app-logo:hover .logo-icon {
+    transform: scale(1.05);
+}
+
+/* Text styling */
+.logo-text {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.logo-text span {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.8;
+    font-weight: 400;
+}
+
+/* Larger version for authentication pages */
+.app-logo-large .logo-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+}
+
+.app-logo-large .logo-text {
+    font-size: 2rem;
+}
+
+.app-logo-large .logo-text span {
+    font-size: 0.9rem;
+}
+
+/* Center aligned version */
+.app-logo-center {
+    justify-content: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+    .logo-text span {
+        display: none;
+    }
+    
+    .logo-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+    }
+    
+    .logo-text {
+        font-size: 1.3rem;
+    }
+}
