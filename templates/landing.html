@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary: #1a56db;
+            --primary: #2B2B2B;
             --primary-light: #e5edff;
             --secondary: #6c7280;
             --success: #10b981;
@@ -45,6 +45,44 @@
         a {
             color: inherit;
             text-decoration: none;
+        }
+        /* Add this to your existing CSS in landing.html */
+        
+        .navbar-brand img {
+            height: 60px;
+            transition: height 0.3s ease;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .navbar-brand img {
+                height: 50px; /* Slightly smaller on medium screens */
+            }
+        }
+
+        @media (max-width: 576px) {
+            .navbar-brand img {
+                height: 45px; /* Even smaller on mobile screens */
+            }
+        }
+
+        /* Enhancement for login page logo */
+        .card .navbar-brand img {
+            height: 80px;
+            margin-bottom: 20px;
+        }
+
+        /* Landing page specific logo enhancement */
+        .landing-logo {
+            font-size: 2.2rem !important;
+            font-weight: 700;
+            padding: 10px 0;
+        }
+
+        /* Add a subtle hover effect */
+        .navbar-brand:hover img {
+            transform: scale(1.05);
+            transition: transform 0.3s ease;
         }
 
         .container {
@@ -732,6 +770,53 @@
             font-weight: 700;
             color: var(--gray-900);
         }
+        .navbar {
+            height: 70px; /* Set a fixed height for the navbar */
+            display: flex;
+             align-items: center;
+        }
+
+        /* Logo sizing that doesn't affect navbar height */
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 0;
+        }
+
+        .navbar-brand img {
+            max-height: 50px; /* Increased from 40px but still contained */
+            width: auto;
+            object-fit: contain;
+            vertical-align: middle;
+        }
+        .logo img {
+        max-height: 50px;
+        width: auto;
+        }
+
+        /* For mobile - ensure navbar stays consistent */
+        @media (max-width: 768px) {
+            .navbar {
+                height: 60px; /* Slightly smaller on mobile */
+            }
+            
+            .navbar-brand img {
+                max-height: 40px;
+            }
+        }
+
+        /* For login page where the logo can be bigger without affecting layout */
+        .card .navbar-brand {
+            height: auto;
+            display: flex;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+
+        .card .navbar-brand img {
+            max-height: 70px;
+        }
 
         /* Animations */
         @keyframes fadeIn {
@@ -760,13 +845,16 @@
         .delay-3 {
             animation-delay: 0.6s;
         }
+        
     </style>
 </head>
 <body>
     <header>
         <div class="container">
             <nav>
-                <a href="#" class="logo">RouteOptimize</a>
+                <a href="#" class="logo">
+                    <img src="{{ url_for('static', filename='imgs/your-logo.png') }}" alt="RouteOptimize" height="30">
+                </a>
                 <div class="nav-links">
                     <a href="#">Home</a>
                     <a href="#features">Features</a>
