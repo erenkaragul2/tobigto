@@ -113,8 +113,20 @@ document.addEventListener('DOMContentLoaded', function() {
     
             if (data.success) {
                 // Store success in global state if it exists
-                if (window.appState) {
-                    window.appState.dataLoaded = true;
+                if (!window.appState) {
+                    window.appState = {};
+                }
+                window.appState.dataLoaded = true;
+                
+                // IMPORTANT: Store the coordinates and other data in the global state
+                if (data.coordinates) {
+                    window.appState.coordinates = data.coordinates;
+                }
+                if (data.demands) {
+                    window.appState.demands = data.demands;
+                }
+                if (data.company_names) {
+                    window.appState.company_names = data.company_names;
                 }
                 
                 // Show data preview

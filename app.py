@@ -1363,7 +1363,73 @@ def get_solution(job_id):
         'cost_history': job_info.get('cost_history', []),
         'temp_history': job_info.get('temp_history', [])
     })
-
+@app.route('/proxy_google_distance_matrix', methods=['POST'])
+def proxy_google_distance_matrix():
+    """Proxy Google Maps Distance Matrix API requests to protect API key"""
+    try:
+        # Get request data
+        data = request.get_json()
+        
+        # Check required parameters
+        if not data or not all(k in data for k in ['origins', 'destinations']):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameters'
+            }), 400
+        
+        # Get API key from environment
+        api_key = os.getenv('GOOGLE_MAPS_API_KEY')
+        if not api_key:
+            return jsonify({
+                'success': False,
+                'error': 'Google Maps API key not configured'
+            }), 500
+        
+        # Construct request URL
+        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        params = {
+            'origins': data['origins'],
+            'destinations': data['destinations'],
+            'mode': data.get('mode', 'driving'),
+            'units': 'metric',
+            'key': api_key
+        }
+        
+        # Add optional parameters if present
+        if 'avoid' in data and data['avoid']:
+            params['avoid'] = data['avoid']
+        
+        # Make request to Google API
+        response = requests.get(url, params=params)
+        
+        # Check if request was successful
+        if response.status_code == 200:
+            google_data = response.json()
+            
+            # Check Google API response status
+            if google_data.get('status') == 'OK':
+                return jsonify({
+                    'success': True,
+                    'results': google_data
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f"Google API error: {google_data.get('status')}",
+                    'error_message': google_data.get('error_message', '')
+                }), 400
+        else:
+            return jsonify({
+                'success': False,
+                'error': f"HTTP error: {response.status_code}",
+                'response': response.text
+            }), response.status_code
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 @app.errorhandler(Exception)
 def handle_error(e):
     import traceback
