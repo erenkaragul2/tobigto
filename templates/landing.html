@@ -817,6 +817,143 @@
         .card .navbar-brand img {
             max-height: 70px;
         }
+        /* Add these styles to your existing CSS in the landing.html <style> section */
+
+        /* Hero layout with flexbox */
+        .hero-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2rem;
+            position: relative;
+        }
+
+        /* Hero Content (Left Side) */
+        .hero-content {
+            flex: 1;
+            max-width: 600px;
+            z-index: 2;
+        }
+
+        /* Hero Image Container (Right Side) */
+        .hero-image-container {
+            flex: 1;
+            position: relative;
+            z-index: 1;
+            max-width: 600px;
+        }
+
+        /* Hero Image */
+        .hero-image {
+            width: 100%;
+            height: auto;
+            border-radius: 20px;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+            object-fit: cover;
+        }
+
+        /* Glassmorphism Style for Metric Cards */
+        .glassmorphism {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 31, 63, 0.1);
+            padding: 1.2rem;
+            width: 180px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: absolute;
+        }
+
+        .glassmorphism:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 31, 63, 0.15);
+        }
+
+        /* Metric Card Positions */
+        .top-right {
+            top: -20px;
+            right: -30px;
+        }
+
+        .bottom-left {
+            bottom: -20px;
+            left: -30px;
+        }
+
+        /* Metric Card Content */
+        .metric-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 0.3rem;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1100px) {
+            .hero-wrapper {
+                flex-direction: column;
+            }
+            
+            .hero-content {
+                max-width: 100%;
+                text-align: center;
+            }
+            
+            .hero-buttons {
+                justify-content: center;
+            }
+            
+            .hero-image-container {
+                max-width: 90%;
+                margin-top: 2rem;
+            }
+            
+            .glassmorphism {
+                width: 150px;
+                padding: 1rem;
+            }
+            
+            .top-right {
+                top: 10px;
+                right: 10px;
+            }
+            
+            .bottom-left {
+                bottom: 10px;
+                left: 10px;
+            }
+            
+            .metric-value {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .hero-image-container {
+                max-width: 100%;
+            }
+            
+            .glassmorphism {
+                width: 120px;
+                padding: 0.8rem;
+            }
+            
+            .metric-label {
+                font-size: 0.8rem;
+            }
+            
+            .metric-value {
+                font-size: 1.3rem;
+            }
+        }
 
         /* Animations */
         @keyframes fadeIn {
@@ -874,36 +1011,44 @@
 
     <section class="hero">
         <div class="container">
-            <div class="hero-content animate-fadeIn">
-                <h1>
-                    <span class="hero-title-highlight">Intelligent Route</span> Optimization for Modern Businesses
-                </h1>
-                <p>
-                    Save time, reduce costs, and improve customer satisfaction with our AI-powered route optimization platform. Perfect for delivery services, field technicians, and sales teams.
-                </p>
-                <div class="hero-buttons">
-                    <a href="#" class="btn btn-primary btn-lg">
-                        <i class="fas fa-play btn-icon"></i>
-                        Start Free Trial
-                    </a>
-                    <a href="#" class="btn btn-outline btn-lg">
-                        <i class="fas fa-video btn-icon"></i>
-                        Watch Demo
-                    </a>
+            <div class="hero-wrapper">
+                <!-- Hero Content (Left Side) -->
+                <div class="hero-content animate-fadeIn">
+                    <h1>
+                        <span class="hero-title-highlight">Intelligent Route</span> Optimization for Modern Businesses
+                    </h1>
+                    <p>
+                        Save time, reduce costs, and improve customer satisfaction with our AI-powered route optimization platform. Perfect for delivery services, field technicians, and sales teams.
+                    </p>
+                    <div class="hero-buttons">
+                        <a href="#" class="btn btn-primary btn-lg">
+                            <i class="fas fa-play btn-icon"></i>
+                            Start Free Trial
+                        </a>
+                        <a href="#" class="btn btn-outline btn-lg">
+                            <i class="fas fa-video btn-icon"></i>
+                            Watch Demo
+                        </a>
+                    </div>
+                    <div class="trial-note">
+                        <i class="fas fa-check-circle"></i> No credit card required • 14-day free trial • Cancel anytime
+                    </div>
                 </div>
-                <div class="trial-note">
-                    <i class="fas fa-check-circle"></i> No credit card required • 14-day free trial • Cancel anytime
-                </div>
-            </div>
-
-            <div class="metrics animate-fadeIn delay-2">
-                <div class="metric-card">
-                    <div class="metric-label">Route Efficiency</div>
-                    <div class="metric-value">+42%</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-label">Fuel Savings</div>
-                    <div class="metric-value">-28%</div>
+                
+                <!-- Hero Image with Stats (Right Side) -->
+                <div class="hero-image-container animate-fadeIn delay-1">
+                    <img src="{{ url_for('static', filename='imgs/CoRouted.png') }}" alt="Route Optimization Dashboard" class="hero-image">
+                    
+                    <!-- Stats positioned on the hero image -->
+                    <div class="metric-card glassmorphism top-right">
+                        <div class="metric-label">Route Efficiency</div>
+                        <div class="metric-value">+42%</div>
+                    </div>
+                    
+                    <div class="metric-card glassmorphism bottom-left">
+                        <div class="metric-label">Fuel Savings</div>
+                        <div class="metric-value">-28%</div>
+                    </div>
                 </div>
             </div>
         </div>
