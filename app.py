@@ -793,7 +793,43 @@ def upload_file():
         else:
             return jsonify({'success': False, 'error': 'Unsupported file format'})
         
-        # Convert DataFrame to JSON
+        # Extract coordinates, names, and demands from the DataFrame
+        coordinates = []
+        company_names = []
+        demands = []
+        
+        # Extract coordinates
+        if 'X' in data_df.columns and 'Y' in data_df.columns:
+            coordinates = data_df[['X', 'Y']].values.tolist()
+        elif 'x_coord' in data_df.columns and 'y_coord' in data_df.columns:
+            coordinates = data_df[['x_coord', 'y_coord']].values.tolist()
+        elif 'coordinates' in data_df.columns:
+            # Try to parse coordinates from a combined field
+            for coord_str in data_df['coordinates']:
+                try:
+                    if isinstance(coord_str, str):
+                        coord_str = coord_str.strip('() ')
+                        parts = coord_str.split(',')
+                        if len(parts) == 2:
+                            lat = float(parts[0].strip())
+                            lng = float(parts[1].strip())
+                            coordinates.append([lat, lng])
+                except Exception as e:
+                    print(f"Error parsing coordinate: {coord_str}: {e}")
+        
+        # Extract company names
+        if 'company_name' in data_df.columns:
+            company_names = data_df['company_name'].tolist()
+        elif 'Name' in data_df.columns:
+            company_names = data_df['Name'].tolist()
+        
+        # Extract demands
+        if 'demand' in data_df.columns:
+            demands = data_df['demand'].tolist()
+        elif 'Demand' in data_df.columns:
+            demands = data_df['Demand'].tolist()
+        
+        # Convert DataFrame to JSON for storage
         data_json = data_df.to_json(orient='records')
         
         # Use the secure RPC function instead of direct table insert
@@ -809,34 +845,22 @@ def upload_file():
             }
         ).execute()
         
-        if result['success']:
-            # IMPORTANT: Store the data in session for later processing
-            session['data'] = {
-                'coordinates': result['coordinates'],
-                'company_names': result['company_names'],
-                'demands': result['demands'],
-                'dataframe': json.dumps({
-                    'data': result['data'][:20],  # Limit to 20 rows for session size
-                    'columns': result['columns']
-                })
-            }
-            session.modified = True  # Force session update
-            
-            # Debug: Print what we're storing in session
-            print(f"Storing in session: {len(result['coordinates'])} coords, " +
-                f"{len(result['demands'])} demands")
-                
-            return jsonify({
-                'success': True,
-                'message': f'Successfully processed {filename}',
-                'columns': result['columns'],
-                'previewData': result['data'][:10],
-                'nodes': result['nodes'],
-                'coordinates': result['coordinates'],
-                'company_names': result['company_names'],
-                'demands': result['demands'],
-                'distanceMatrixPreview': result.get('distance_matrix_preview', [])
+        # Store data in session for later processing
+        session['data'] = {
+            'coordinates': coordinates,
+            'company_names': company_names,
+            'demands': demands,
+            'dataframe': json.dumps({
+                'data': data_df.to_dict('records')[:20],  # Limit to 20 rows for session size
+                'columns': data_df.columns.tolist()
             })
+        }
+        session.modified = True  # Force session update
+        
+        # Debug: Print what we're storing in session
+        print(f"Storing in session: {len(coordinates)} coords, " +
+              f"{len(demands)} demands")
+        
         if not response.data:
             return jsonify({'success': False, 'error': 'Failed to store upload data'}), 500
             
@@ -846,13 +870,36 @@ def upload_file():
         # Store upload ID in session
         session['current_upload_id'] = upload_id
         
+        # Calculate distance matrix preview
+        max_preview = min(5, len(coordinates))
+        matrix_preview = []
+        
+        from math import sqrt
+        for i in range(max_preview):
+            row = []
+            for j in range(max_preview):
+                if i == j:
+                    row.append(0)
+                else:
+                    # Calculate Euclidean distance (in meters)
+                    x1, y1 = coordinates[i]
+                    x2, y2 = coordinates[j]
+                    dist = int(sqrt((x2 - x1)**2 + (y2 - y1)**2) * 100)  # Scale for display
+                    row.append(dist)
+            matrix_preview.append(row)
+        
         # Return data preview to client
         return jsonify({
             'success': True,
             'message': f'File {file.filename} uploaded successfully',
             'upload_id': upload_id,
             'columns': data_df.columns.tolist(),
-            'previewData': data_df.head(20).to_dict(orient='records')
+            'previewData': data_df.head(20).to_dict('records'),
+            'nodes': len(coordinates),
+            'coordinates': coordinates,
+            'company_names': company_names,
+            'demands': demands,
+            'distanceMatrixPreview': matrix_preview
         })
     
     except Exception as e:
@@ -860,7 +907,6 @@ def upload_file():
         return jsonify({
             'success': False, 
             'error': str(e)
-    
         })
 
 @app.route('/generate_random', methods=['POST'])
