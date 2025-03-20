@@ -291,7 +291,61 @@
 {% endblock %}
 
 {% block scripts %}
+
 <script>
+    // Add this script to your dashboard.html file, inside the {% block scripts %} section
+    document.addEventListener('DOMContentLoaded', function() {  
+    // Function to refresh usage stats via AJAX
+    function refreshUsageStats() {
+        console.log("Refreshing usage statistics...");
+        
+        fetch('/subscription/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const subscription = data.subscription;
+                    if (subscription) {
+                        updateUsageDisplay(subscription);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error("Error refreshing usage statistics:", error);
+            });
+    }
+    
+    // Function to update the usage display in the dashboard
+    function updateUsageDisplay(subscription) {
+        // Update route usage count
+        const routeUsageCountElements = document.querySelectorAll('.route-usage-count');
+        routeUsageCountElements.forEach(element => {
+            element.textContent = subscription.routes_used || 0;
+        });
+        
+        // Update progress bar
+        const routeProgressBars = document.querySelectorAll('.route-usage-progress');
+        const maxRoutes = subscription.max_routes || 5;
+        const routesUsed = subscription.routes_used || 0;
+        const percentage = Math.min(100, Math.round((routesUsed / maxRoutes) * 100));
+        
+        routeProgressBars.forEach(progressBar => {
+            progressBar.style.width = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', routesUsed);
+        });
+        
+        // Update any text showing the count
+        const routesUsedTextElements = document.querySelectorAll('.routes-used-text');
+        routesUsedTextElements.forEach(element => {
+            element.textContent = `${routesUsed} of ${maxRoutes}`;
+        });
+    }
+    
+    // Refresh usage stats when page loads
+    refreshUsageStats();
+    
+    // Optionally refresh every minute
+    setInterval(refreshUsageStats, 60000);
+    });
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize any dashboard-specific functionality here
         console.log('Dashboard loaded for user: {{ user.email }}');

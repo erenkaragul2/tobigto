@@ -1,19 +1,22 @@
-// vercel-tracking-fix.js - Add to your static/js folder and include in index.html
-// This script ensures route credits are properly deducted when using the client-side solver
-
-// Enhanced version of vercel-tracking-fix.js
+// Enhanced route usage tracking system
+// Replace or update the existing vercel-tracking-fix.js file with this code
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Loading enhanced route usage tracking system");
     
     // Flag to track if we've already recorded usage for the current session
     window.routeUsageRecorded = false;
-    // Retry mechanism variables
-    window.maxRetries = 3;
-    window.retryDelay = 1000; // 1 second initial delay, with exponential backoff
+    // Track pending recording attempts
+    window.pendingRecordingAttempt = null;
     
     // Function to record route usage via API call with retry logic
     window.recordRouteUsage = function(retryCount = 0) {
+        // If already recording, return the pending promise
+        if (window.pendingRecordingAttempt) {
+            console.log("Route usage recording already in progress, returning pending promise");
+            return window.pendingRecordingAttempt;
+        }
+        
         // Check if we've already recorded usage for this session
         if (window.routeUsageRecorded) {
             console.log("Route usage already recorded for this session");
@@ -22,97 +25,108 @@ document.addEventListener('DOMContentLoaded', function() {
         
         console.log("Recording route usage via API");
         
+        // Create a timestamp for debugging
+        const timestamp = new Date().toISOString();
+        const sessionId = Math.random().toString(36).substring(2, 15);
+        
         // Prepare request with additional metadata for debugging
         const requestData = {
             client_side: true,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp,
             browser: navigator.userAgent,
-            session_id: Math.random().toString(36).substring(2, 15)
+            session_id: sessionId
         };
         
-        // Make API call to record route usage
-        return fetch('/record_route_usage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify(requestData)
-        })
-        .then(response => {
-            // Handle HTTP-level errors
-            if (!response.ok) {
-                // If we get a 403 response, it likely means we've hit our limit
-                if (response.status === 403) {
-                    return response.json().then(errorData => {
-                        handleRouteLimitReached(errorData);
-                        throw new Error('Route limit reached');
+        // Create the promise and store it
+        window.pendingRecordingAttempt = new Promise((resolve, reject) => {
+            // Make API call to record route usage
+            fetch('/record_route_usage', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => {
+                // Handle non-JSON responses
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    // If not JSON, create a standardized error response
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    return { success: true, message: "Server returned non-JSON success response" };
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    console.log("Route usage recorded successfully", data);
+                    window.routeUsageRecorded = true;
+                    
+                    // Update any UI elements showing route usage
+                    updateRouteUsageDisplay(data.routes_used, data.max_routes);
+                    
+                    resolve(data);
+                } else {
+                    console.error("Failed to record route usage:", data.error);
+                    
+                    // Check if this is a limit reached error
+                    if (data.limit_reached) {
+                        handleRouteLimitReached(data);
+                        reject(new Error("Route limit reached"));
+                    } else {
+                        reject(new Error(data.error || 'Unknown error recording usage'));
+                    }
+                }
+            })
+            .catch(error => {
+                console.error("Error recording route usage:", error);
+                
+                // Implement retry mechanism
+                if (retryCount < 3) {
+                    console.log(`Retrying route usage recording (attempt ${retryCount + 1}/3)`);
+                    
+                    // Clear the pending promise
+                    window.pendingRecordingAttempt = null;
+                    
+                    // Wait and retry
+                    setTimeout(() => {
+                        window.recordRouteUsage(retryCount + 1)
+                            .then(resolve)
+                            .catch(reject);
+                    }, 1000 * Math.pow(2, retryCount)); // Exponential backoff
+                } else {
+                    // Log failure but allow operation to continue
+                    showTrackingWarning();
+                    
+                    // Despite the error, let's consider it a "success" from the flow perspective
+                    // but mark it as untracked
+                    resolve({ 
+                        success: false, 
+                        error: error.message,
+                        untracked: true
                     });
                 }
-                
-                // For other errors, try to get the error message from the response
-                return response.json().then(errorData => {
-                    throw new Error(errorData.error || `Server error: ${response.status}`);
-                });
-            }
-            
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                console.log("Route usage recorded successfully");
-                window.routeUsageRecorded = true;
-                
-                // Update any UI elements showing route usage
-                updateRouteUsageDisplay(data.routes_used, data.max_routes);
-                
-                return data;
-            } else {
-                console.error("Failed to record route usage:", data.error);
-                
-                // Check if this is a limit reached error
-                if (data.limit_reached) {
-                    handleRouteLimitReached(data);
-                }
-                
-                throw new Error(data.error || 'Unknown error recording usage');
-            }
-        })
-        .catch(error => {
-            console.error("Error recording route usage:", error);
-            
-            // Implement retry mechanism
-            if (retryCount < window.maxRetries) {
-                // Exponential backoff
-                const delay = window.retryDelay * Math.pow(2, retryCount);
-                console.log(`Retrying in ${delay}ms (attempt ${retryCount + 1}/${window.maxRetries})`);
-                
-                return new Promise(resolve => {
-                    setTimeout(() => {
-                        resolve(window.recordRouteUsage(retryCount + 1));
-                    }, delay);
-                });
-            }
-            
-            // After max retries, still allow the operation to proceed
-            // but mark it as potentially not tracked
-            console.warn("Max retries reached - operation will proceed but may not be tracked");
-            window.routeUsageWarningShown = true;
-            
-            // Show a warning to the user
-            showTrackingWarning();
-            
-            return { 
-                success: false, 
-                error: error.message,
-                untracked: true
-            };
+            })
+            .finally(() => {
+                // Clear the pending promise reference when done
+                window.pendingRecordingAttempt = null;
+            });
         });
+        
+        return window.pendingRecordingAttempt;
     };
     
     // Function to update UI elements showing route usage
     function updateRouteUsageDisplay(routesUsed, maxRoutes) {
-        // Find elements that display route usage (if any exist)
+        if (typeof routesUsed !== 'number' || typeof maxRoutes !== 'number') {
+            console.warn("Invalid data for updateRouteUsageDisplay", { routesUsed, maxRoutes });
+            return;
+        }
+        
+        // Find elements that display route usage
         const routeUsageElements = document.querySelectorAll('.route-usage-count');
         routeUsageElements.forEach(element => {
             element.textContent = routesUsed;
@@ -138,8 +152,44 @@ document.addEventListener('DOMContentLoaded', function() {
         const errorMessage = data.error || 'You have reached your route creation limit for this billing period.';
         
         // Show a modal or alert with the error
-        if (window.showLimitReachedModal) {
-            window.showLimitReachedModal(errorMessage, data.redirect || '/pricing');
+        if (window.bootstrap && typeof bootstrap.Modal !== 'undefined') {
+            // Use Bootstrap modal if available
+            let modalEl = document.getElementById('limitReachedModal');
+            
+            if (!modalEl) {
+                // Create modal if it doesn't exist
+                modalEl = document.createElement('div');
+                modalEl.id = 'limitReachedModal';
+                modalEl.className = 'modal fade';
+                modalEl.innerHTML = `
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-warning text-dark">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Route Limit Reached
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body" id="limitReachedModalBody">
+                                ${errorMessage}
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                <a href="${data.redirect || '/pricing'}" class="btn btn-primary">View Upgrade Options</a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modalEl);
+            } else {
+                // Update existing modal
+                document.getElementById('limitReachedModalBody').textContent = errorMessage;
+            }
+            
+            // Show the modal
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
         } else {
             // Fallback to simple confirm dialog
             if (confirm(`${errorMessage}\n\nWould you like to view upgrade options?`)) {
@@ -150,8 +200,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Show warning when tracking fails
     function showTrackingWarning() {
-        if (window.routeUsageWarningShown) return; // Only show once
-        
+        // Create an alert div to show the warning
         const alertDiv = document.createElement('div');
         alertDiv.className = 'alert alert-warning alert-dismissible fade show mt-3';
         alertDiv.innerHTML = `
@@ -159,9 +208,13 @@ document.addEventListener('DOMContentLoaded', function() {
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         `;
         
-        // Find a container to show the alert
+        // Find a suitable container to display the alert
         const container = document.querySelector('.container') || document.body;
-        container.prepend(alertDiv);
+        if (container.firstChild) {
+            container.insertBefore(alertDiv, container.firstChild);
+        } else {
+            container.appendChild(alertDiv);
+        }
         
         // Auto-dismiss after 10 seconds
         setTimeout(() => {
@@ -171,96 +224,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 10000);
     }
     
-    // Function to check subscription limits for drivers/vehicles with improved error handling
-    window.checkDriverLimit = function(requestedDrivers) {
-        return fetch('/check_driver_limit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({
-                max_vehicles: requestedDrivers
-            })
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (!data.success && data.limit_exceeded) {
-                // Alert the user about the limit
-                alert(data.error || `You can only use up to ${data.max_allowed} drivers on your current plan.`);
-                
-                // Return the max allowed value
-                return {
-                    allowed: false,
-                    maxAllowed: data.max_allowed
-                };
-            }
-            
-            return {
-                allowed: true,
-                maxAllowed: data.max_allowed || requestedDrivers
-            };
-        })
-        .catch(error => {
-            console.error("Error checking driver limit:", error);
-            
-            // Default to allowing with warning
-            showTrackingWarning();
-            
-            return {
-                allowed: true, 
-                maxAllowed: requestedDrivers,
-                error: error.message,
-                warning: "Limit check failed, proceeding with requested value"
-            };
-        });
-    };
-    
-    // Modal for limit reached errors
-    window.showLimitReachedModal = function(message, redirectUrl) {
-        // Create modal element if it doesn't exist
-        let modalEl = document.getElementById('limitReachedModal');
-        if (!modalEl) {
-            modalEl = document.createElement('div');
-            modalEl.id = 'limitReachedModal';
-            modalEl.className = 'modal fade';
-            modalEl.innerHTML = `
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header bg-warning text-dark">
-                            <h5 class="modal-title">
-                                <i class="fas fa-exclamation-triangle me-2"></i>
-                                Route Limit Reached
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body" id="limitReachedModalBody">
-                            ${message}
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                            <a href="${redirectUrl}" class="btn btn-primary">View Upgrade Options</a>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modalEl);
-        } else {
-            // Update existing modal content
-            document.getElementById('limitReachedModalBody').textContent = message;
-            modalEl.querySelector('.modal-footer a').href = redirectUrl;
-        }
-        
-        // Show the modal
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
-    };
-    
     // Intercept solver calls to record usage
     if (typeof window.runClientSideSolver === 'function') {
         const originalRunClientSideSolver = window.runClientSideSolver;
@@ -268,7 +231,7 @@ document.addEventListener('DOMContentLoaded', function() {
         window.runClientSideSolver = function(params, jobId) {
             console.log("Intercepted client-side solver call to enforce limits and track usage");
             
-            // First check driver limit
+            // First check driver limit, then record usage, then solve
             window.checkDriverLimit(params.max_vehicles)
                 .then(limitResult => {
                     if (!limitResult.allowed) {
@@ -283,31 +246,66 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
                     
-                    // Record route usage before solving
-                    window.recordRouteUsage()
-                        .then(usageResult => {
-                            // If usage recording succeeded or we're proceeding despite potential tracking issues
-                            if (usageResult.success || usageResult.untracked) {
-                                // Run the original solver
-                                originalRunClientSideSolver(params, jobId);
-                            } else if (usageResult.limit_reached) {
-                                // Don't run solver if limit reached
-                                const solveBtn = document.getElementById('solveBtn');
-                                if (solveBtn) {
-                                    solveBtn.disabled = false;
-                                    solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
-                                }
-                                
-                                const solverProgressContainer = document.getElementById('solverProgressContainer');
-                                if (solverProgressContainer) {
-                                    solverProgressContainer.style.display = 'none';
-                                }
-                            }
-                        });
+                    // Next, record route usage before solving
+                    return window.recordRouteUsage();
+                })
+                .then(usageResult => {
+                    console.log("Route usage recording result:", usageResult);
+                    
+                    // If usage recording succeeded or we're proceeding despite potential tracking issues
+                    if (usageResult.success || usageResult.untracked) {
+                        // Run the original solver
+                        originalRunClientSideSolver(params, jobId);
+                    } else {
+                        console.error("Failed to record usage, not running solver");
+                        
+                        // Reset solve button
+                        const solveBtn = document.getElementById('solveBtn');
+                        if (solveBtn) {
+                            solveBtn.disabled = false;
+                            solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
+                        }
+                        
+                        // Hide progress container
+                        const solverProgressContainer = document.getElementById('solverProgressContainer');
+                        if (solverProgressContainer) {
+                            solverProgressContainer.style.display = 'none';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error("Error in solver chain:", error);
+                    
+                    // Show error message
+                    const solveInfoAlert = document.getElementById('solveInfoAlert');
+                    if (solveInfoAlert) {
+                        solveInfoAlert.innerHTML = `
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-circle me-2"></i>
+                                ${error.message || "An error occurred while processing your request."}
+                            </div>
+                        `;
+                        solveInfoAlert.style.display = 'block';
+                    }
+                    
+                    // Reset solve button
+                    const solveBtn = document.getElementById('solveBtn');
+                    if (solveBtn) {
+                        solveBtn.disabled = false;
+                        solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
+                    }
+                    
+                    // Hide progress container
+                    const solverProgressContainer = document.getElementById('solverProgressContainer');
+                    if (solverProgressContainer) {
+                        solverProgressContainer.style.display = 'none';
+                    }
                 });
         };
         
-        console.log("Successfully intercepted client-side solver function with enhanced tracking");
+        console.log("Successfully intercepted client-side solver function");
+    } else {
+        console.warn("Could not find runClientSideSolver function to intercept");
     }
     
     console.log("Enhanced route usage tracking system loaded");

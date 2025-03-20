@@ -252,29 +252,51 @@ def lemon_squeezy_webhook():
             'traceback': traceback.format_exc()
         }), 500
 
+# Add this to your subscription_routes.py file
+
 @subscription_bp.route('/subscription/status')
-def status():
-    """Check subscription status"""
-    # Check if user is logged in
+@login_required
+def subscription_status():
+    """Get current subscription status including usage"""
     if 'user' not in session:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
     
-    subscription_manager = get_subscription_manager()
-    
-    # Get the user's subscription
-    subscription = subscription_manager.get_user_subscription(session['user']['id'])
-    
-    if subscription:
-        return jsonify({
-            'success': True,
-            'subscription': {
+    try:
+        # Get subscription manager
+        subscription_manager = get_subscription_manager()
+        
+        # Get user's subscription
+        subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        
+        # Get user's usage
+        user_usage = subscription_manager.get_user_usage(session['user']['id'])
+        
+        # Get user's limits
+        user_limits = subscription_manager.get_user_limits(session['user']['id'])
+        
+        # Combine into a single response
+        combined_data = {
+            'subscription_active': bool(subscription),
+            'routes_used': user_usage.get('routes_created', 0),
+            'max_routes': user_limits.get('max_routes', 5),
+            'max_drivers': user_limits.get('max_drivers', 3),
+            'is_trial': user_limits.get('is_trial', True),
+        }
+        
+        if subscription:
+            combined_data.update({
+                'plan_id': subscription.get('plan_id'),
                 'status': subscription.get('status'),
-                'plan': subscription.get('plan_id'),
-                'expires': subscription.get('current_period_end')
-            }
-        })
-    else:
+                'current_period_end': subscription.get('current_period_end')
+            })
+        
         return jsonify({
             'success': True,
-            'subscription': None
+            'subscription': combined_data
         })
+    except Exception as e:
+        current_app.logger.error(f"Error getting subscription status: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

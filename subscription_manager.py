@@ -290,6 +290,7 @@ class SubscriptionManager:
             dict: Usage statistics including routes created this month
         """
         if not user_id:
+            current_app.logger.warning("get_user_usage called with empty user_id")
             return {'routes_created': 0}
         
         try:
@@ -298,37 +299,62 @@ class SubscriptionManager:
             current_month = current_date.month
             current_year = current_date.year
             
-            # Query the usage_tracking table for the current month
-            start_of_month = datetime(current_year, current_month, 1, tzinfo=timezone.utc).isoformat()
-            end_of_month = datetime(
-                current_year if current_month < 12 else current_year + 1,
-                current_month + 1 if current_month < 12 else 1, 
-                1, tzinfo=timezone.utc
-            ).isoformat()
+            # Calculate first and last day of the month
+            first_day = f"{current_year}-{current_month:02d}-01"
+            # Calculate last day of the current month
+            if current_month == 12:
+                last_day = f"{current_year + 1}-01-01"
+            else:
+                last_day = f"{current_year}-{current_month + 1:02d}-01"
+                
+            current_app.logger.info(f"Querying usage for user {user_id} between {first_day} and {last_day}")
             
             # Query the database for usage in the current month
+            # IMPORTANT: Use usage_date for filtering, not created_at
             try:
                 response = self.supabase.table('usage_tracking').select('*')\
                     .eq('user_id', user_id)\
-                    .gte('created_at', start_of_month)\
-                    .lt('created_at', end_of_month)\
+                    .gte('usage_date', first_day)\
+                    .lt('usage_date', last_day)\
                     .execute()
                 
                 if response.data:
+                    # Log what we found for debugging
+                    current_app.logger.info(f"Found {len(response.data)} usage records")
+                    
                     # Sum up the routes created this month
                     routes_created = sum(item.get('routes_created', 0) for item in response.data)
+                    current_app.logger.info(f"Total routes created this month: {routes_created}")
                     return {'routes_created': routes_created}
                 else:
+                    current_app.logger.info(f"No usage records found for user {user_id} this month")
                     return {'routes_created': 0}
                     
             except Exception as e:
-                print(f"Error querying usage tracking: {str(e)}")
-                # Create the table if it doesn't exist
-                self._ensure_usage_tracking_table_exists()
-                return {'routes_created': 0}
+                current_app.logger.error(f"Error querying usage tracking: {str(e)}")
+                # Try a simpler query as a fallback
+                try:
+                    response = self.supabase.table('usage_tracking').select('*')\
+                        .eq('user_id', user_id)\
+                        .execute()
+                        
+                    if response.data:
+                        # Filter manually to the current month
+                        current_month_records = [
+                            item for item in response.data 
+                            if 'usage_date' in item and first_day <= item['usage_date'] < last_day
+                        ]
+                        routes_created = sum(item.get('routes_created', 0) for item in current_month_records)
+                        current_app.logger.info(f"Fallback query found {routes_created} routes created")
+                        return {'routes_created': routes_created}
+                        
+                    return {'routes_created': 0}
+                except Exception as fallback_error:
+                    current_app.logger.error(f"Fallback query also failed: {str(fallback_error)}")
+                    return {'routes_created': 0}
             
         except Exception as e:
-            print(f"Error getting user usage: {str(e)}")
+            current_app.logger.error(f"Error getting user usage: {str(e)}")
             return {'routes_created': 0}
 
     def get_user_limits(self, user_id):
@@ -425,66 +451,119 @@ class SubscriptionManager:
             return False
         
         try:
-            # Use the RPC function to record usage (more secure approach)
+            # 1. Try the Supabase RPC function approach first (preferred)
             try:
-                # First try using the RPC function if available
+                current_app.logger.info(f"Attempting to record route usage for user {user_id} via RPC function")
                 response = self.supabase.rpc(
                     'record_route_usage',
                     {'p_user_id': user_id}
                 ).execute()
                 
+                # Check if response indicates success
                 if response and hasattr(response, 'data'):
-                    current_app.logger.info(f"Route usage recorded for user {user_id} via RPC")
+                    current_app.logger.info(f"Route usage recorded for user {user_id} via RPC function")
                     return True
                     
             except Exception as rpc_error:
-                current_app.logger.warning(f"RPC method failed, falling back to direct table access: {str(rpc_error)}")
-                # Fall back to direct table access if RPC method is not available
+                current_app.logger.warning(f"RPC method failed, error: {str(rpc_error)}")
+                # Continue to fallback methods
             
-            # Fallback method: Use service role credentials to bypass RLS
-            # Get a database connection with service role
-            from db_connection import get_db_connection
-            conn = get_db_connection(use_service_role=True)
-            
+            # 2. Try direct Supabase table manipulation as first fallback
             try:
-                with conn.cursor() as cursor:
-                    # Get today's date in UTC
-                    today = datetime.now(timezone.utc).date().isoformat()
+                current_app.logger.info(f"Attempting to record route usage for user {user_id} via direct Supabase table access")
+                
+                # Get today's date
+                today = datetime.now(timezone.utc).date().isoformat()
+                
+                # Check if record exists for today
+                response = self.supabase.table('usage_tracking')\
+                    .select('*')\
+                    .eq('user_id', user_id)\
+                    .eq('usage_date', today)\
+                    .execute()
                     
-                    # Check if a record exists for today
-                    cursor.execute("""
-                        SELECT id, routes_created FROM usage_tracking
-                        WHERE user_id = %s AND usage_date = %s
-                    """, (user_id, today))
+                if response and response.data and len(response.data) > 0:
+                    # Update existing record
+                    record = response.data[0]
+                    new_count = record.get('routes_created', 0) + 1
                     
-                    record = cursor.fetchone()
-                    
-                    if record:
-                        # Update existing record
-                        cursor.execute("""
-                            UPDATE usage_tracking
-                            SET routes_created = %s, updated_at = NOW()
-                            WHERE id = %s
-                        """, (record['routes_created'] + 1, record['id']))
-                    else:
-                        # Insert new record
-                        cursor.execute("""
-                            INSERT INTO usage_tracking (user_id, usage_date, routes_created, created_at, updated_at)
-                            VALUES (%s, %s, 1, NOW(), NOW())
-                        """, (user_id, today))
-                    
-                    # Commit the transaction
-                    conn.commit()
-                    current_app.logger.info(f"Route usage recorded for user {user_id} via direct DB connection")
+                    update_response = self.supabase.table('usage_tracking')\
+                        .update({'routes_created': new_count, 'updated_at': datetime.now(timezone.utc).isoformat()})\
+                        .eq('id', record['id'])\
+                        .execute()
+                        
+                    current_app.logger.info(f"Updated existing record: routes_created={new_count}")
+                    return True
+                else:
+                    # Insert new record
+                    insert_response = self.supabase.table('usage_tracking')\
+                        .insert({
+                            'user_id': user_id,
+                            'usage_date': today,
+                            'routes_created': 1,
+                            'created_at': datetime.now(timezone.utc).isoformat(),
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        })\
+                        .execute()
+                        
+                    current_app.logger.info(f"Created new usage record for user {user_id}")
                     return True
                     
-            except Exception as db_error:
-                conn.rollback()
-                current_app.logger.error(f"Database error recording route usage: {str(db_error)}")
-                current_app.logger.error(traceback.format_exc())
+            except Exception as supabase_error:
+                current_app.logger.warning(f"Direct Supabase table access failed: {str(supabase_error)}")
+                # Continue to next fallback method
+                
+            # 3. Try direct database connection as last resort
+            try:
+                current_app.logger.info(f"Attempting to record route usage for user {user_id} via direct DB connection")
+                
+                # Get database connection with service role to bypass RLS
+                from db_connection import get_db_connection
+                conn = get_db_connection(use_service_role=True)
+                
+                try:
+                    with conn.cursor() as cursor:
+                        # Get today's date in UTC
+                        today = datetime.now(timezone.utc).date().isoformat()
+                        
+                        # Check if a record exists for today
+                        cursor.execute("""
+                            SELECT id, routes_created FROM usage_tracking
+                            WHERE user_id = %s AND usage_date = %s
+                        """, (user_id, today))
+                        
+                        record = cursor.fetchone()
+                        
+                        if record:
+                            # Update existing record
+                            cursor.execute("""
+                                UPDATE usage_tracking
+                                SET routes_created = %s, updated_at = NOW()
+                                WHERE id = %s
+                            """, (record['routes_created'] + 1, record['id']))
+                        else:
+                            # Insert new record
+                            cursor.execute("""
+                                INSERT INTO usage_tracking (user_id, usage_date, routes_created, created_at, updated_at)
+                                VALUES (%s, %s, 1, NOW(), NOW())
+                            """, (user_id, today))
+                        
+                        # Commit the transaction
+                        conn.commit()
+                        current_app.logger.info(f"Route usage recorded for user {user_id} via direct DB connection")
+                        return True
+                        
+                except Exception as db_error:
+                    conn.rollback()
+                    current_app.logger.error(f"Database error recording route usage: {str(db_error)}")
+                    current_app.logger.error(traceback.format_exc())
+                    return False
+                finally:
+                    conn.close()
+                    
+            except Exception as db_connection_error:
+                current_app.logger.error(f"Failed to establish database connection: {str(db_connection_error)}")
                 return False
-            finally:
-                conn.close()
                 
         except Exception as e:
             current_app.logger.error(f"Error in record_route_creation: {str(e)}")
