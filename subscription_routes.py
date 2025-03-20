@@ -7,6 +7,7 @@ from functools import wraps
 from datetime import datetime, timezone
 
 from subscription_manager import get_subscription_manager, subscription_required
+from auth_middleware import login_required
 
 # Create Blueprint
 subscription_bp = Blueprint('subscription', __name__)
