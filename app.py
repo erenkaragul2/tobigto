@@ -1506,7 +1506,101 @@ def record_route_usage():
             'success': False,
             'error': str(e)
         }), 500
-
+@app.route('/check_driver_limit', methods=['POST'])
+@login_required
+@with_db_connection(use_service_role=True)  # Use service role to bypass RLS
+def check_driver_limit_endpoint():
+    """
+    Endpoint for client-side code to check driver/vehicle limits
+    Uses secured database connection to avoid RLS issues
+    """
+    try:
+        # Get parameters from request
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing request data'
+            }), 400
+            
+        max_vehicles = int(data.get('max_vehicles', 5))
+        user_id = session.get('user', {}).get('id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': 'User not authenticated'
+            }), 401
+        
+        # Try using direct database access to check limits
+        try:
+            # g.db is provided by @with_db_connection decorator
+            with g.db.cursor() as cursor:
+                # Get subscription information for max drivers
+                cursor.execute("""
+                    SELECT plan_id FROM subscriptions
+                    WHERE user_id = %s AND status = 'active'
+                    LIMIT 1
+                """, (user_id,))
+                
+                subscription = cursor.fetchone()
+                max_allowed = 3  # Default trial limit
+                
+                # If subscription exists, get plan limits
+                if subscription:
+                    plan_id = subscription['plan_id']
+                    
+                    # Maps plan variant IDs to driver limits
+                    plan_limits = {
+                        '727207': 8,   # Starter: 8 drivers
+                        '727230': 15,  # Professional: 15 drivers
+                        '727232': 24   # Enterprise: 24 drivers
+                    }
+                    
+                    # Get limit based on plan, or use default
+                    max_allowed = plan_limits.get(plan_id, 3)
+                    
+                # Check if requested exceeds limit
+                if max_vehicles > max_allowed:
+                    return jsonify({
+                        'success': False, 
+                        'error': f'Your subscription allows a maximum of {max_allowed} drivers. You requested {max_vehicles}.',
+                        'limit_exceeded': True,
+                        'max_allowed': max_allowed
+                    })
+                else:
+                    return jsonify({
+                        'success': True,
+                        'max_allowed': max_allowed
+                    })
+                    
+        except Exception as db_error:
+            current_app.logger.error(f"Database error checking driver limit: {str(db_error)}")
+            # Fall back to usage_limits.py function
+            is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, user_id)
+            
+            if not is_allowed:
+                return jsonify({
+                    'success': False, 
+                    'error': error_message,
+                    'limit_exceeded': True,
+                    'max_allowed': max_allowed
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'max_allowed': max_allowed
+                })
+        
+    except Exception as e:
+        import traceback
+        current_app.logger.error(f"Error checking driver limit: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 @app.route('/check_driver_limit', methods=['POST'])
 @login_required
 def check_driver_limit_endpoint():
