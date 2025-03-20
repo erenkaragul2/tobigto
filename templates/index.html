@@ -135,20 +135,55 @@
 </head>
 <body>
     <div class="container-fluid py-3">
-        <header class="mb-4">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h2>CVRP Solver <small class="text-muted">using Simulated Annealing</small></h2>
-                    <p class="lead">Solve Capacitated Vehicle Routing Problems with this interactive tool</p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <span class="badge bg-primary">
-                        <i class="fas fa-truck me-1"></i> Vehicle Routing
-                    </span>
-                    <span class="badge bg-secondary">
-                        <i class="fas fa-thermometer-half me-1"></i> Simulated Annealing
-                    </span>
-                </div>
+        <header>
+            <div class="container">
+                <nav>
+                    <a href="#" class="logo">
+                        <img src="{{ url_for('static', filename='imgs/your-logo.png') }}" alt="RouteOptimize" height="30">
+                    </a>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <ul class="navbar-nav ms-auto">
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('landing') }}">Home</a>
+                            </li>
+                            {% if user %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('solver_app') }}">Route Solver</a>
+                            </li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-user-circle me-1"></i> 
+                                    {% if user.email %}{{ user.email }}{% else %}Account{% endif %}
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                    <li><a class="dropdown-item" href="{{ url_for('profile') }}">Profile</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('subscription.pricing') }}">Subscription</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
+                                </ul>
+                            </li>
+                            {% else %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('subscription.pricing') }}">Pricing</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link btn btn-primary btn-sm text-white px-3 py-1 ms-2" href="{{ url_for('signup') }}">Sign Up</a>
+                            </li>
+                            {% endif %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#helpModal">
+                                    <i class="fas fa-question-circle me-1"></i> Help
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </nav>
             </div>
         </header>
 
@@ -581,6 +616,7 @@
     <!-- Enhanced Road Routing -->
     <script src="{{ url_for('static', filename='js/simplified-report-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/vercel-cvrp-fix.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/vercel-tracking-fix.js') }}"></script>
 
 
 </body>

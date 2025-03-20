@@ -11,7 +11,7 @@
     <style>
         :root {
             --primary: #2B2B2B;
-            --primary-light: #e5edff;
+            --primary-light: #dadada;
             --secondary: #6c7280;
             --success: #10b981;
             --danger: #ef4444;
@@ -748,6 +748,12 @@
             transform: translateY(-30%);
             z-index: 2;
         }
+        .metric-card:first-of-type {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            z-index: 10;
+        }
 
         .metric-card {
             position: relative;
@@ -757,6 +763,13 @@
             padding: 1rem;
             width: 180px;
             margin-bottom: 1.5rem;
+        }
+
+        .metric-card:last-of-type {
+            position: absolute;
+            bottom: 50px;
+            right: -220px;
+            z-index: 10;
         }
 
         .metric-label {
@@ -864,6 +877,7 @@
             width: 180px;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             position: absolute;
+            z-index: 10;  /* Added higher z-index to appear above the image */
         }
 
         .glassmorphism:hover {
@@ -871,16 +885,7 @@
             box-shadow: 0 12px 40px rgba(0, 31, 63, 0.15);
         }
 
-        /* Metric Card Positions */
-        .top-right {
-            top: -20px;
-            right: -30px;
-        }
-
-        .bottom-left {
-            bottom: -20px;
-            left: -30px;
-        }
+        
 
         /* Metric Card Content */
         .metric-label {
@@ -895,6 +900,7 @@
             font-weight: 700;
             color: var(--gray-900);
         }
+        
 
         /* Responsive adjustments */
         @media (max-width: 1100px) {

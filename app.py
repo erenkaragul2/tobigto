@@ -1439,7 +1439,115 @@ def handle_error(e):
         'error': str(e),
         'traceback': traceback.format_exc()
     }), 500
+# Add these routes to your app.py file
 
+@app.route('/record_route_usage', methods=['POST'])
+@login_required
+def record_route_usage():
+    """
+    Endpoint for client-side solvers to record route usage
+    This ensures route credits are properly tracked when using
+    the Vercel compatibility mode
+    """
+    try:
+        # Get user ID from session
+        user_id = session.get('user', {}).get('id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': 'User not authenticated'
+            }), 401
+        
+        # Get subscription manager
+        subscription_manager = get_subscription_manager()
+        
+        # Check if user has hit their route limit
+        has_routes_left, routes_created, max_routes = subscription_manager.check_route_limit(user_id)
+        
+        # If user has no routes left, return an error
+        if not has_routes_left:
+            return jsonify({
+                'success': False,
+                'error': f'Route limit reached ({routes_created}/{max_routes})',
+                'limit_reached': True,
+                'routes_used': routes_created,
+                'max_routes': max_routes,
+                'redirect': url_for('subscription.pricing')
+            }), 403
+        
+        # Record route creation
+        success = subscription_manager.record_route_creation(user_id)
+        
+        if success:
+            # Get updated usage after recording
+            user_usage = subscription_manager.get_user_usage(user_id)
+            routes_used = user_usage.get('routes_created', 0)
+            
+            # Get user's subscription limits
+            user_limits = subscription_manager.get_user_limits(user_id)
+            max_routes = user_limits.get('max_routes', 5)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Route usage recorded successfully',
+                'routes_used': routes_used,
+                'max_routes': max_routes
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to record route usage'
+            }), 500
+            
+    except Exception as e:
+        print(f"Error recording route usage: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/check_driver_limit', methods=['POST'])
+@login_required
+def check_driver_limit_endpoint():
+    """
+    Endpoint for client-side code to check driver/vehicle limits
+    """
+    try:
+        # Get parameters from request
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing request data'
+            }), 400
+            
+        max_vehicles = int(data.get('max_vehicles', 5))
+        user_id = session.get('user', {}).get('id')
+        
+        # Check driver limit
+        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, user_id)
+        
+        if not is_allowed:
+            return jsonify({
+                'success': False, 
+                'error': error_message,
+                'limit_exceeded': True,
+                'max_allowed': max_allowed
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'max_allowed': max_allowed
+            })
+        
+    except Exception as e:
+        print(f"Error checking driver limit: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 # Utility functions
 def run_solver(job_id, problem_data, params):
     """Run the CVRP solver in a separate thread"""
