@@ -1601,47 +1601,7 @@ def check_driver_limit_endpoint():
             'success': False,
             'error': str(e)
         }), 500
-@app.route('/check_driver_limit', methods=['POST'])
-@login_required
-def check_driver_limit_endpoint():
-    """
-    Endpoint for client-side code to check driver/vehicle limits
-    """
-    try:
-        # Get parameters from request
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing request data'
-            }), 400
-            
-        max_vehicles = int(data.get('max_vehicles', 5))
-        user_id = session.get('user', {}).get('id')
-        
-        # Check driver limit
-        is_allowed, max_allowed, error_message = driver_limit_check(max_vehicles, user_id)
-        
-        if not is_allowed:
-            return jsonify({
-                'success': False, 
-                'error': error_message,
-                'limit_exceeded': True,
-                'max_allowed': max_allowed
-            })
-        else:
-            return jsonify({
-                'success': True,
-                'max_allowed': max_allowed
-            })
-        
-    except Exception as e:
-        print(f"Error checking driver limit: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+
 # Utility functions
 def run_solver(job_id, problem_data, params):
     """Run the CVRP solver in a separate thread"""
