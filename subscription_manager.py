@@ -284,7 +284,7 @@ class SubscriptionManager:
     # Update this method in subscription_manager.py to ensure it always returns complete data
     def get_user_usage(self, user_id):
         """
-        Get usage statistics for a user with proper error handling
+        Get usage statistics for a user with improved error handling
         
         Args:
             user_id: The user ID
@@ -293,72 +293,28 @@ class SubscriptionManager:
             dict: Usage statistics including routes created this month
         """
         if not user_id:
-            current_app.logger.warning("get_user_usage called with empty user_id")
-            return {'routes_created': 0}
+            print("Cannot get user usage: Missing user_id")
+            return {'routes_created': 0, 'algorithm_runs': 0}
         
         try:
-            # Get the current month and year
-            current_date = datetime.now(timezone.utc)
-            current_month = current_date.month
-            current_year = current_date.year
+            # Import here to avoid circular imports
+            from db_tracking import get_usage_tracker
             
-            # Calculate first and last day of the month
-            first_day = f"{current_year}-{current_month:02d}-01"
-            # Calculate last day of the current month
-            if current_month == 12:
-                last_day = f"{current_year + 1}-01-01"
-            else:
-                last_day = f"{current_year}-{current_month + 1:02d}-01"
+            # Get the usage tracker
+            tracker = get_usage_tracker()
+            
+            # Use the tracker to get usage stats
+            result = tracker.get_usage_stats(user_id)
+            
+            # Return the stats
+            return {
+                'routes_created': result.get('routes_created', 0),
+                'algorithm_runs': result.get('algorithm_runs', 0)
+            }
                 
-            current_app.logger.info(f"Querying usage for user {user_id} between {first_day} and {last_day}")
-            
-            # Query the database for usage in the current month
-            # IMPORTANT: Use usage_date for filtering, not created_at
-            try:
-                response = self.supabase.table('usage_tracking').select('*')\
-                    .eq('user_id', user_id)\
-                    .gte('usage_date', first_day)\
-                    .lt('usage_date', last_day)\
-                    .execute()
-                
-                if response.data:
-                    # Log what we found for debugging
-                    current_app.logger.info(f"Found {len(response.data)} usage records")
-                    
-                    # Sum up the routes created this month
-                    routes_created = sum(item.get('routes_created', 0) for item in response.data)
-                    current_app.logger.info(f"Total routes created this month: {routes_created}")
-                    return {'routes_created': routes_created}
-                else:
-                    current_app.logger.info(f"No usage records found for user {user_id} this month")
-                    return {'routes_created': 0}
-                    
-            except Exception as e:
-                current_app.logger.error(f"Error querying usage tracking: {str(e)}")
-                # Try a simpler query as a fallback
-                try:
-                    response = self.supabase.table('usage_tracking').select('*')\
-                        .eq('user_id', user_id)\
-                        .execute()
-                        
-                    if response.data:
-                        # Filter manually to the current month
-                        current_month_records = [
-                            item for item in response.data 
-                            if 'usage_date' in item and first_day <= item['usage_date'] < last_day
-                        ]
-                        routes_created = sum(item.get('routes_created', 0) for item in current_month_records)
-                        current_app.logger.info(f"Fallback query found {routes_created} routes created")
-                        return {'routes_created': routes_created}
-                        
-                    return {'routes_created': 0}
-                except Exception as fallback_error:
-                    current_app.logger.error(f"Fallback query also failed: {str(fallback_error)}")
-                    return {'routes_created': 0}
-            
         except Exception as e:
-            current_app.logger.error(f"Error getting user usage: {str(e)}")
-            return {'routes_created': 0}
+            print(f"Error getting user usage: {str(e)}")
+            return {'routes_created': 0, 'algorithm_runs': 0}
 
     def get_user_limits(self, user_id):
         """
@@ -442,7 +398,7 @@ class SubscriptionManager:
 
     def record_route_creation(self, user_id):
         """
-        Record a route creation using the verified RPC method
+        Record a route creation using our enhanced tracking system
         
         Args:
             user_id: The user ID
@@ -455,21 +411,20 @@ class SubscriptionManager:
             return False
         
         try:
-            # Use only the proven RPC method
-            print(f"Recording route usage for user {user_id} via RPC function")
-            response = self.supabase.rpc(
-                'record_route_usage',
-                {'p_user_id': user_id}
-            ).execute()
+            # Import here to avoid circular imports
+            from db_tracking import get_usage_tracker
             
-            # Simple success check
-            success = response and hasattr(response, 'data') and response.data is True
+            # Get the usage tracker
+            tracker = get_usage_tracker()
             
-            print(f"Route usage recording {'succeeded' if success else 'failed'}: {response}")
-            return success
+            # Use the tracker to record the route creation
+            result = tracker.record_route_creation(user_id)
             
+            # Return success status
+            return result.get('success', False)
+                
         except Exception as e:
-            print(f"Error recording route usage via RPC: {str(e)}")
+            print(f"Error recording route usage: {str(e)}")
             return False
 
     def _ensure_usage_tracking_table_exists(self):
@@ -527,7 +482,7 @@ class SubscriptionManager:
         return False
     def record_algorithm_run(self, user_id):
         """
-        Record an algorithm run for a user
+        Record an algorithm run using our enhanced tracking system
         
         Args:
             user_id: The user ID
@@ -540,19 +495,18 @@ class SubscriptionManager:
             return False
         
         try:
-            # Use the RPC method (which we know works)
-            print(f"Recording algorithm run for user {user_id}")
-            response = self.supabase.rpc(
-                'record_algorithm_run',  # New function name
-                {'p_user_id': user_id}
-            ).execute()
+            # Import here to avoid circular imports
+            from db_tracking import get_usage_tracker
             
-            # Simple success check
-            success = response and hasattr(response, 'data') and response.data is True
+            # Get the usage tracker
+            tracker = get_usage_tracker()
             
-            print(f"Algorithm run recording {'succeeded' if success else 'failed'}: {response}")
-            return success
+            # Use the tracker to record the algorithm run
+            result = tracker.record_algorithm_run(user_id)
             
+            # Return success status
+            return result.get('success', False)
+                
         except Exception as e:
             print(f"Error recording algorithm run: {str(e)}")
             return False

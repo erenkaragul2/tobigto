@@ -29,6 +29,7 @@ import traceback
 
 from datetime import datetime, timezone  # Fix the timezone import error
 from db_connection import get_db_connection  # Fix the get_db_connection error
+from db_tracking import get_usage_tracker
 
 # Load environment variables from .env file
 load_dotenv()
@@ -281,7 +282,63 @@ def process_excel(filepath, filename):
             'success': False,
             'error': f'Error reading Excel file: {str(e)}'
         }
+@app.before_request
+def process_pending_usage_records():
+    """Process any pending usage records on each request"""
+    # Only process for authenticated users
+    if 'user' in session and session.get('user', {}).get('id'):
+        user_id = session['user']['id']
+        
+        # Only process on non-API endpoints to avoid unnecessary processing on AJAX calls
+        if not request.path.startswith('/api/') and not request.path.startswith('/static/'):
+            try:
+                # Get the tracker and process pending records
+                tracker = get_usage_tracker()
+                tracker.process_pending_records(user_id)
+            except Exception as e:
+                print(f"Error processing pending records: {str(e)}")
+                # Don't interrupt the request flow
 
+# Add this debug endpoint to app.py
+@app.route('/debug/usage-tracking', methods=['GET'])
+@login_required
+def debug_usage_tracking():
+    """Debug endpoint to test usage tracking"""
+    user_id = session['user']['id']
+    tracker = get_usage_tracker()
+    
+    # Process any pending records first
+    process_result = tracker.process_pending_records(user_id)
+    
+    # Get current stats
+    stats_result = tracker.get_usage_stats(user_id)
+    
+    # Add test record
+    if request.args.get('test') == 'route':
+        test_result = tracker.record_route_creation(user_id)
+    elif request.args.get('test') == 'algorithm':
+        test_result = tracker.record_algorithm_run(user_id)
+    else:
+        test_result = {'success': False, 'message': 'No test specified. Use ?test=route or ?test=algorithm to run a test'}
+    
+    # Get updated stats
+    updated_stats = None
+    if test_result.get('success', False):
+        updated_stats = tracker.get_usage_stats(user_id)
+    
+    # Get pending records from session
+    pending_records = session.get('pending_usage_records', [])
+    
+    return jsonify({
+        'success': True,
+        'user_id': user_id,
+        'pending_records_processing': process_result,
+        'current_stats': stats_result,
+        'test_result': test_result,
+        'updated_stats': updated_stats,
+        'pending_records': pending_records,
+        'session_keys': list(session.keys())
+    })
 # Sample data endpoint
 @file_bp.route('/sample_data', methods=['GET'])
 def get_sample_data():
@@ -1447,11 +1504,135 @@ def handle_error(e):
         'error': str(e),
         'traceback': traceback.format_exc()
     }), 500
-# Add these routes to your app.py file
+# Add this to app.py
+@app.route('/debug/reset-tracking', methods=['POST'])
+@login_required
+def reset_tracking_debug():
+    """Debug endpoint to reset tracking state for the current user"""
+    try:
+        user_id = session['user']['id']
+        today = datetime.now(timezone.utc).date()
+        
+        # Use a direct database connection with service role to bypass RLS
+        conn = get_db_connection(use_service_role=True)
+        updated = False
+        
+        try:
+            with conn.cursor() as cursor:
+                # Delete today's usage records for this user
+                cursor.execute(
+                    """
+                    DELETE FROM usage_tracking 
+                    WHERE user_id = %s AND usage_date = %s
+                    RETURNING id
+                    """,
+                    (user_id, today)
+                )
+                result = cursor.fetchall()
+                conn.commit()
+                
+                # Check if records were deleted
+                updated = len(result) > 0
+                
+                # Log result
+                print(f"Reset tracking for user {user_id}: Deleted {len(result)} records")
+        finally:
+            conn.close()
+            
+        return jsonify({
+            'success': True,
+            'reset': updated,
+            'message': f"Reset tracking for user {user_id}" if updated else f"No records found to reset for user {user_id}"
+        })
+            
+    except Exception as e:
+        print(f"Error resetting tracking: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/debug/fix-algorithm-runs', methods=['POST'])
+@login_required
+def fix_algorithm_runs_debug():
+    """Debug endpoint to fix algorithm runs count for the current user"""
+    try:
+        user_id = session['user']['id']
+        requested_count = request.json.get('count', 1)
+        
+        # Validate count
+        if not isinstance(requested_count, int) or requested_count < 0 or requested_count > 100:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid count. Must be an integer between 0 and 100.'
+            }), 400
+            
+        # Get today's date
+        today = datetime.now(timezone.utc).date()
+        
+        # Use a direct database connection with service role to bypass RLS
+        conn = get_db_connection(use_service_role=True)
+        updated = False
+        
+        try:
+            with conn.cursor() as cursor:
+                # Check if record exists for today
+                cursor.execute(
+                    """
+                    SELECT id, algorithm_runs FROM usage_tracking 
+                    WHERE user_id = %s AND usage_date = %s
+                    """,
+                    (user_id, today)
+                )
+                
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # Update existing record
+                    cursor.execute(
+                        """
+                        UPDATE usage_tracking 
+                        SET algorithm_runs = %s, updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING id
+                        """,
+                        (requested_count, existing['id'])
+                    )
+                    updated = True
+                else:
+                    # Insert new record
+                    cursor.execute(
+                        """
+                        INSERT INTO usage_tracking 
+                        (user_id, usage_date, routes_created, algorithm_runs) 
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (user_id, today, 0, requested_count)
+                    )
+                    updated = True
+                
+                conn.commit()
+        finally:
+            conn.close()
+            
+        return jsonify({
+            'success': True,
+            'updated': updated,
+            'algorithm_runs': requested_count,
+            'message': f"Fixed algorithm runs count to {requested_count} for user {user_id}"
+        })
+            
+    except Exception as e:
+        print(f"Error fixing algorithm runs: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 @app.route('/record_algorithm_run', methods=['POST'])
 @login_required
-def record_algorithm_run():
-    """Endpoint for tracking algorithm runs"""
+def record_algorithm_run_endpoint():
+    """Endpoint for tracking algorithm runs with enhanced error handling"""
     try:
         user_id = session.get('user', {}).get('id')
         
@@ -1461,51 +1642,40 @@ def record_algorithm_run():
                 'error': 'User not authenticated'
             }), 401
         
-        # Get subscription manager
-        subscription_manager = get_subscription_manager()
+        # Get usage tracker directly
+        from db_tracking import get_usage_tracker
+        tracker = get_usage_tracker()
         
-        # Check if user has remaining credits
-        credits_info = subscription_manager.get_algorithm_credits(user_id)
+        # Record algorithm run with detailed result
+        result = tracker.record_algorithm_run(user_id)
         
-        if credits_info['credits_used'] >= credits_info['max_credits']:
-            return jsonify({
-                'success': False,
-                'error': f"You've used all your {credits_info['max_credits']} algorithm runs for this month",
-                'limit_reached': True,
-                'credits_used': credits_info['credits_used'],
-                'max_credits': credits_info['max_credits'],
-                'redirect': url_for('subscription.pricing')
-            }), 403
+        # Log result for debugging
+        print(f"Algorithm run recording result: {result}")
         
-        # Record the algorithm run
-        success = subscription_manager.record_algorithm_run(user_id)
-        
-        if success:
-            # Get updated usage
-            updated_credits = subscription_manager.get_algorithm_credits(user_id)
+        if result.get('success'):
+            # Get updated credits info
+            stats = tracker.get_usage_stats(user_id)
             
             return jsonify({
                 'success': True,
                 'message': 'Algorithm run recorded successfully',
-                'credits_used': updated_credits['credits_used'],
-                'max_credits': updated_credits['max_credits'],
-                'credits_remaining': updated_credits['credits_remaining']
+                'method': result.get('method', 'unknown'),
+                'credits_used': stats.get('algorithm_runs', 0),
+                'max_credits': 10,  # Default value, replace with actual limit
+                'credits_remaining': max(0, 10 - stats.get('algorithm_runs', 0))  # Replace 10 with actual limit
             })
         else:
+            # Return detailed error
             return jsonify({
                 'success': False,
-                'error': 'Failed to record algorithm run'
+                'error': result.get('error', 'Failed to record algorithm run'),
+                'methods_tried': result.get('methods_tried', [])
             }), 500
             
     except Exception as e:
+        import traceback
         print(f"Error recording algorithm run: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-            
-    except Exception as e:
-        print(f"Error recording algorithm run: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
