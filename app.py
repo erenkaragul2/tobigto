@@ -31,6 +31,9 @@ from datetime import datetime, timezone  # Fix the timezone import error
 from db_connection import get_db_connection  # Fix the get_db_connection error
 from db_tracking import get_usage_tracker
 
+from batch_recording import batch_recording_bp
+app.register_blueprint(batch_recording_bp)
+
 # Load environment variables from .env file
 load_dotenv()
 
