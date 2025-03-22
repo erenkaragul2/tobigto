@@ -108,7 +108,24 @@ document.addEventListener('DOMContentLoaded', function() {
         
         console.log("Solve button handler attached");
     }, 1000);  // Wait 1 second to ensure all other scripts have loaded
-    
+    // In client-side solver code (vercel-solve-fix.js), before starting the solving process:
+    window.recordAlgorithmRun().then(result => {
+        if (result.success) {
+            // Continue with solving
+            startSolving();
+        } else if (result.limit_reached) {
+            // Show error about reaching credit limit
+            alert("You've reached your monthly algorithm run limit. Please upgrade your plan to continue.");
+            
+            // Optionally redirect to pricing
+            if (result.redirect) {
+                window.location.href = result.redirect;
+            }
+        } else {
+            // Show generic error
+            console.error("Failed to record algorithm run:", result.error);
+        }
+    });
     // A simplified client-side solver implementation
     function runClientSideSolver(params, jobId) {
         console.log("Running simplified client-side solver in Vercel compatibility mode");

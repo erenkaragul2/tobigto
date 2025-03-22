@@ -166,6 +166,67 @@ document.addEventListener('DOMContentLoaded', function() {
         
         return window.pendingRecordingAttempt;
     };
+    // Add a new function to record algorithm runs
+    window.recordAlgorithmRun = function() {
+        console.log("Recording algorithm run...");
+        
+        // If already recorded in this session, don't record again
+        if (window.algorithmRunRecorded) {
+            console.log("Algorithm run already recorded for this session");
+            return Promise.resolve({
+                success: true,
+                alreadyRecorded: true
+            });
+        }
+        
+        // Record the algorithm run
+        return fetch('/record_algorithm_run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            console.log("Algorithm run response status:", response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log("Algorithm run response:", data);
+            
+            if (data.success) {
+                // Mark as recorded for this session
+                window.algorithmRunRecorded = true;
+                
+                // Update credits display if it exists
+                updateCreditsDisplay(data.credits_used, data.max_credits);
+            }
+            
+            return data;
+        })
+        .catch(error => {
+            console.error("Error recording algorithm run:", error);
+            return {
+                success: false,
+                error: error.message
+            };
+        });
+    };
+
+    // Helper function to update credits display
+    function updateCreditsDisplay(used, max) {
+        const creditsElements = document.querySelectorAll('.algorithm-credits');
+        creditsElements.forEach(element => {
+            element.textContent = `${used}/${max}`;
+        });
+        
+        const progressBars = document.querySelectorAll('.credits-progress');
+        progressBars.forEach(bar => {
+            const percentage = Math.min(100, Math.round((used / max) * 100));
+            bar.style.width = `${percentage}%`;
+        });
+    }
     
     // Function to update UI elements showing route usage
     function updateRouteUsageDisplay(routesUsed, maxRoutes) {

@@ -27,6 +27,9 @@ from upload_handler import enhanced_upload_handler
 from db_connection import with_db_connection
 import traceback
 
+from datetime import datetime, timezone  # Fix the timezone import error
+from db_connection import get_db_connection  # Fix the get_db_connection error
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -357,6 +360,8 @@ def inject_subscription_data():
     if 'user' in session:
         subscription_manager = get_subscription_manager()
         subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        subscription = subscription_manager.get_user_subscription(session['user']['id'])
+        credits_info = subscription_manager.get_algorithm_credits(session['user']['id'])
         default_limits = {
             'max_routes': 5,
             'max_drivers': 3
@@ -366,6 +371,8 @@ def inject_subscription_data():
         if subscription:
             # Initialize with default limits
             subscription['limits'] = default_limits
+            subscription['credits_used'] = credits_info['credits_used']
+            subscription['credits_remaining'] = credits_info['credits_remaining']
             
             plan_id = subscription.get('plan_id')
         # Get plan features if subscription exists
@@ -381,7 +388,8 @@ def inject_subscription_data():
             
         return {
             'subscription': subscription,
-            'plans': subscription_manager.PLANS
+            'plans': subscription_manager.PLANS,
+            'credits_info': credits_info
         }
     return {}
 # Public routes
@@ -1440,16 +1448,11 @@ def handle_error(e):
         'traceback': traceback.format_exc()
     }), 500
 # Add these routes to your app.py file
-
-@app.route('/record_route_usage', methods=['POST'])
+@app.route('/record_algorithm_run', methods=['POST'])
 @login_required
-def record_route_usage():
-    """
-    Enhanced endpoint for client-side solvers to record route usage
-    with better error handling and response data
-    """
+def record_algorithm_run():
+    """Endpoint for tracking algorithm runs"""
     try:
-        # Get user ID from session
         user_id = session.get('user', {}).get('id')
         
         if not user_id:
@@ -1458,27 +1461,67 @@ def record_route_usage():
                 'error': 'User not authenticated'
             }), 401
         
-        # Extract request metadata for debugging
-        metadata = {}
-        try:
-            data = request.get_json(silent=True) or {}
-            metadata = {
-                'client_side': data.get('client_side', True),
-                'timestamp': data.get('timestamp'),
-                'browser': data.get('browser'),
-                'session_id': data.get('session_id')
-            }
-            print(f"Record route usage request metadata: {metadata}")
-        except Exception as metadata_error:
-            print(f"Error extracting metadata: {str(metadata_error)}")
-        
         # Get subscription manager
         subscription_manager = get_subscription_manager()
         
-        # Check if user has hit their route limit
+        # Check if user has remaining credits
+        credits_info = subscription_manager.get_algorithm_credits(user_id)
+        
+        if credits_info['credits_used'] >= credits_info['max_credits']:
+            return jsonify({
+                'success': False,
+                'error': f"You've used all your {credits_info['max_credits']} algorithm runs for this month",
+                'limit_reached': True,
+                'credits_used': credits_info['credits_used'],
+                'max_credits': credits_info['max_credits'],
+                'redirect': url_for('subscription.pricing')
+            }), 403
+        
+        # Record the algorithm run
+        success = subscription_manager.record_algorithm_run(user_id)
+        
+        if success:
+            # Get updated usage
+            updated_credits = subscription_manager.get_algorithm_credits(user_id)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Algorithm run recorded successfully',
+                'credits_used': updated_credits['credits_used'],
+                'max_credits': updated_credits['max_credits'],
+                'credits_remaining': updated_credits['credits_remaining']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to record algorithm run'
+            }), 500
+            
+    except Exception as e:
+        print(f"Error recording algorithm run: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+@app.route('/record_route_usage', methods=['POST'])
+@login_required
+def record_route_usage():
+    """Enhanced endpoint for client-side solvers to record route usage"""
+    try:
+        user_id = session.get('user', {}).get('id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': 'User not authenticated'
+            }), 401
+        
+        # Get subscription manager and check limits first
+        subscription_manager = get_subscription_manager()
+        
+        # Check if user has hit their route limit before recording
         has_routes_left, routes_created, max_routes = subscription_manager.check_route_limit(user_id)
         
-        # If user has no routes left, return an error
         if not has_routes_left:
             return jsonify({
                 'success': False,
@@ -1489,63 +1532,30 @@ def record_route_usage():
                 'redirect': url_for('subscription.pricing')
             }), 403
         
-        # Record route creation with retry
-        success = False
-        for attempt in range(3):  # Try up to 3 times
-            if attempt > 0:
-                print(f"Retry attempt {attempt} for user {user_id}")
-                time.sleep(1)  # Wait between retries
-                
-            success = subscription_manager.record_route_creation(user_id)
-            if success:
-                break
+        # Record usage using the working RPC method
+        success = subscription_manager.record_route_creation(user_id)
         
         if success:
-            # Get updated usage after recording - with error handling
-            try:
-                user_usage = subscription_manager.get_user_usage(user_id)
-                routes_used = user_usage.get('routes_created', 0)
-            except Exception as usage_error:
-                print(f"Error getting updated usage: {str(usage_error)}")
-                routes_used = routes_created + 1  # Estimate the new count
-            
-            # Get user's subscription limits - with error handling
-            try:
-                user_limits = subscription_manager.get_user_limits(user_id)
-                max_routes = user_limits.get('max_routes', 5)
-            except Exception as limits_error:
-                print(f"Error getting user limits: {str(limits_error)}")
-                # Keep existing max_routes value from check_route_limit
+            # Get updated usage after recording
+            user_usage = subscription_manager.get_user_usage(user_id)
             
             return jsonify({
                 'success': True,
                 'message': 'Route usage recorded successfully',
-                'routes_used': routes_used,
-                'max_routes': max_routes,
-                'attempt_count': attempt + 1
+                'routes_used': user_usage.get('routes_created', 0),
+                'max_routes': max_routes
             })
         else:
-            # Critical: Create a flag in session to retry on next request
-            session['pending_usage_record'] = {
-                'timestamp': datetime.now().isoformat(),
-                'user_id': user_id,
-                'metadata': metadata
-            }
-            
             return jsonify({
                 'success': False,
-                'error': 'Failed to record route usage after multiple attempts',
-                'retry_scheduled': True
+                'error': 'Failed to record route usage'
             }), 500
             
     except Exception as e:
-        import traceback
         print(f"Error recording route usage: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({
             'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
+            'error': str(e)
         }), 500
 
 # Add a middleware to check for and process pending usage records
@@ -1574,6 +1584,7 @@ def process_pending_usage_records():
                     print(f"Discarding old pending usage record from {pending['timestamp']}")
         except Exception as e:
             print(f"Error processing pending usage record: {str(e)}")
+
 @app.route('/check_driver_limit', methods=['POST'])
 @login_required
 @with_db_connection(use_service_role=True)  # Use service role to bypass RLS
@@ -1669,7 +1680,49 @@ def check_driver_limit_endpoint():
             'success': False,
             'error': str(e)
         }), 500
-
+@app.route('/debug-rls')
+@login_required
+def debug_rls():
+    # Test all methods of writing to the database
+    user_id = session['user']['id']
+    results = {}
+    
+    # 1. Try Supabase RPC
+    try:
+        response = supabase.rpc('record_route_usage', {'p_user_id': user_id}).execute()
+        results['rpc'] = {'success': True, 'response': str(response)}
+    except Exception as e:
+        results['rpc'] = {'success': False, 'error': str(e)}
+    
+    # 2. Try direct Supabase
+    try:
+        response = supabase.table('usage_tracking').insert({
+            'user_id': user_id,
+            'usage_date': datetime.now(timezone.utc).date().isoformat(),
+            'routes_created': 1
+        }).execute()
+        results['direct'] = {'success': True, 'response': str(response)}
+    except Exception as e:
+        results['direct'] = {'success': False, 'error': str(e)}
+    
+    # 3. Try DB connection with service role
+    try:
+        conn = get_db_connection(use_service_role=True)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO usage_tracking (user_id, usage_date, routes_created) VALUES (%s, %s, %s) RETURNING id",
+                (user_id, datetime.now(timezone.utc).date(), 1)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            results['db_service'] = {'success': True, 'id': result['id'] if result else None}
+    except Exception as e:
+        results['db_service'] = {'success': False, 'error': str(e)}
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+    
+    return jsonify(results)
 # Utility functions
 def run_solver(job_id, problem_data, params):
     """Run the CVRP solver in a separate thread"""

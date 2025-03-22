@@ -163,32 +163,35 @@ class SubscriptionManager:
     PLANS = {
         'starter': {
             'name': 'Starter',
-            'variant_id': '727207',  # Your variant ID
-            'features': ['8 drivers', 'Up to 25 routes per month', 'Basic route optimization', 'Email support'],
+            'variant_id': '727207',
+            'features': ['8 drivers', 'Up to 25 algorithm runs per month', 'Basic route optimization', 'Email support'],
             'limits': {
                 'max_routes': 25,
-                'max_drivers': 8
+                'max_drivers': 8,
+                'max_algorithm_runs': 25  # Add this line
             }
         },
         'professional': {
             'name': 'Professional',
-            'variant_id': '727230',  # Your variant ID
-            'features': ['15 drivers', 'Up to 55 routes per month', 'Advanced route optimization', 'Priority support'],
+            'variant_id': '727230',
+            'features': ['15 drivers', 'Up to 55 algorithm runs per month', 'Advanced route optimization', 'Priority support'],
             'limits': {
                 'max_routes': 55,
-                'max_drivers': 15
+                'max_drivers': 15,
+                'max_algorithm_runs': 55  # Add this line
             }
         },
         'enterprise': {
             'name': 'Enterprise',
-            'variant_id': '727232',  # Your variant ID
-            'features': ['24 drivers', 'Up to 120 routes per month', 'Premium features', '24/7 support'],
+            'variant_id': '727232',
+            'features': ['24 drivers', 'Up to 120 algorithm runs per month', 'Premium features', '24/7 support'],
             'limits': {
                 'max_routes': 120,
-                'max_drivers': 24
+                'max_drivers': 24,
+                'max_algorithm_runs': 120  # Add this line
             }
         }
-    }   
+    }
     
     def __init__(self, supabase_client):
         self.supabase = supabase_client
@@ -437,257 +440,37 @@ class SubscriptionManager:
     # Updated record_route_creation method for SubscriptionManager
 # Add this to your subscription_manager.py file, replacing the existing method
 
-def record_route_creation(self, user_id):
-    """
-    Record a route creation in the usage tracking table with enhanced reliability
-    
-    Args:
-        user_id: The user ID
+    def record_route_creation(self, user_id):
+        """
+        Record a route creation using the verified RPC method
         
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    import traceback
-    from datetime import datetime, timezone
-    
-    if not user_id:
-        print("Cannot record route usage: Missing user_id")
-        return False
-    
-    # Store attempt details for debugging
-    attempt_details = {
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'user_id': user_id,
-        'methods_tried': []
-    }
-    
-    # Get today's date in UTC
-    today = datetime.now(timezone.utc).date().isoformat()
-    
-    try:
-        # 1. Try the Supabase RPC function approach first (preferred)
-        attempt_details['methods_tried'].append('rpc')
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not user_id:
+            print("Cannot record route usage: Missing user_id")
+            return False
+        
         try:
-            print(f"Attempting to record route usage for user {user_id} via RPC function")
-            
-            # Create SQL function if it doesn't exist (run this in your Supabase SQL editor first)
-            # This is commented out as it should be created in advance
-            """
-            CREATE OR REPLACE FUNCTION public.record_route_usage(p_user_id UUID)
-            RETURNS BOOLEAN
-            LANGUAGE plpgsql
-            SECURITY DEFINER
-            AS $$
-            DECLARE
-                today DATE := CURRENT_DATE;
-                existing_record RECORD;
-            BEGIN
-                -- Check if record exists for today
-                SELECT * INTO existing_record 
-                FROM usage_tracking 
-                WHERE user_id = p_user_id AND usage_date = today;
-                
-                IF FOUND THEN
-                    -- Update existing record
-                    UPDATE usage_tracking
-                    SET routes_created = routes_created + 1,
-                        updated_at = NOW()
-                    WHERE id = existing_record.id;
-                ELSE
-                    -- Insert new record
-                    INSERT INTO usage_tracking (user_id, usage_date, routes_created, created_at, updated_at)
-                    VALUES (p_user_id, today, 1, NOW(), NOW());
-                END IF;
-                
-                RETURN TRUE;
-            END;
-            $$;
-            """
-            
+            # Use only the proven RPC method
+            print(f"Recording route usage for user {user_id} via RPC function")
             response = self.supabase.rpc(
                 'record_route_usage',
                 {'p_user_id': user_id}
             ).execute()
             
-            # Check if response indicates success - this means data exists
-            if response and (hasattr(response, 'data') or hasattr(response, 'count')):
-                print(f"Route usage recorded for user {user_id} via RPC function")
-                return True
-                
-        except Exception as rpc_error:
-            print(f"RPC method failed, error: {str(rpc_error)}")
-            attempt_details['rpc_error'] = str(rpc_error)
-            # Continue to fallback methods
-        
-        # 2. Try direct Supabase table manipulation as first fallback
-        attempt_details['methods_tried'].append('supabase_direct')
-        try:
-            print(f"Attempting to record route usage for user {user_id} via direct Supabase table access")
+            # Simple success check
+            success = response and hasattr(response, 'data') and response.data is True
             
-            # Check if record exists for today
-            response = self.supabase.table('usage_tracking')\
-                .select('*')\
-                .eq('user_id', user_id)\
-                .eq('usage_date', today)\
-                .execute()
-                
-            if response and response.data and len(response.data) > 0:
-                # Update existing record
-                record = response.data[0]
-                new_count = record.get('routes_created', 0) + 1
-                
-                update_response = self.supabase.table('usage_tracking')\
-                    .update({'routes_created': new_count, 'updated_at': datetime.now(timezone.utc).isoformat()})\
-                    .eq('id', record['id'])\
-                    .execute()
-                    
-                print(f"Updated existing record: routes_created={new_count}")
-                return True
-            else:
-                # Insert new record
-                insert_data = {
-                    'user_id': user_id,
-                    'usage_date': today,
-                    'routes_created': 1,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                    'updated_at': datetime.now(timezone.utc).isoformat()
-                }
-                
-                insert_response = self.supabase.table('usage_tracking')\
-                    .insert(insert_data)\
-                    .execute()
-                    
-                print(f"Created new usage record for user {user_id}")
-                return True
-                
-        except Exception as supabase_error:
-            print(f"Direct Supabase table access failed: {str(supabase_error)}")
-            attempt_details['supabase_direct_error'] = str(supabase_error)
-            # Continue to next fallback method
-        
-        # 3. Try direct database connection as last resort
-        attempt_details['methods_tried'].append('direct_db')
-        try:
-            print(f"Attempting to record route usage for user {user_id} via direct DB connection")
+            print(f"Route usage recording {'succeeded' if success else 'failed'}: {response}")
+            return success
             
-            try:
-                # Import inside the function to avoid circular imports
-                from db_connection import get_db_connection
-                
-                # Get database connection with service role to bypass RLS
-                conn = get_db_connection(use_service_role=True)
-                
-                try:
-                    with conn.cursor() as cursor:
-                        # Check if a record exists for today
-                        cursor.execute("""
-                            SELECT id, routes_created FROM usage_tracking
-                            WHERE user_id = %s AND usage_date = %s
-                        """, (user_id, today))
-                        
-                        record = cursor.fetchone()
-                        
-                        if record:
-                            # Update existing record
-                            new_count = record['routes_created'] + 1
-                            cursor.execute("""
-                                UPDATE usage_tracking
-                                SET routes_created = %s, updated_at = NOW()
-                                WHERE id = %s
-                            """, (new_count, record['id']))
-                            
-                            print(f"Updated existing record via direct DB: routes_created={new_count}")
-                        else:
-                            # Insert new record
-                            cursor.execute("""
-                                INSERT INTO usage_tracking (user_id, usage_date, routes_created, created_at, updated_at)
-                                VALUES (%s, %s, 1, NOW(), NOW())
-                            """, (user_id, today))
-                            
-                            print("Created new usage record via direct DB")
-                        
-                        # Commit the transaction
-                        conn.commit()
-                        print(f"Route usage recorded for user {user_id} via direct DB connection")
-                        return True
-                        
-                except Exception as db_error:
-                    if conn:
-                        conn.rollback()
-                    print(f"Database error recording route usage: {str(db_error)}")
-                    print(traceback.format_exc())
-                    attempt_details['db_query_error'] = str(db_error)
-                    return False
-                finally:
-                    if conn:
-                        conn.close()
-                    
-            except Exception as db_connection_error:
-                print(f"Failed to establish database connection: {str(db_connection_error)}")
-                attempt_details['db_connection_error'] = str(db_connection_error)
-                return False
-                
-        except Exception as db_access_error:
-            print(f"Error accessing database module: {str(db_access_error)}")
-            attempt_details['db_access_error'] = str(db_access_error)
-            
-        # 4. Last resort: Try to create a local record to sync later
-        attempt_details['methods_tried'].append('local_storage')
-        try:
-            # Store usage in a temporary file for later synchronization
-            import os
-            import json
-            
-            # Create directory if it doesn't exist
-            os.makedirs('data/pending_usage', exist_ok=True)
-            
-            # Create a unique file name
-            file_name = f"data/pending_usage/usage_{user_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.json"
-            
-            # Store the usage data
-            with open(file_name, 'w') as f:
-                json.dump({
-                    'user_id': user_id,
-                    'usage_date': today,
-                    'routes_created': 1,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                    'attempt_details': attempt_details
-                }, f)
-                
-            print(f"Stored usage in local file for later sync: {file_name}")
-            return True
-            
-        except Exception as local_storage_error:
-            print(f"Failed to store usage locally: {str(local_storage_error)}")
-            attempt_details['local_storage_error'] = str(local_storage_error)
-            
-        # 5. Store error information for debugging
-        try:
-            import os
-            import json
-            
-            # Create directory if it doesn't exist
-            os.makedirs('data/usage_errors', exist_ok=True)
-            
-            # Create a unique file name
-            error_file = f"data/usage_errors/error_{user_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.json"
-            
-            # Store all attempt details
-            with open(error_file, 'w') as f:
-                json.dump(attempt_details, f)
-                
-            print(f"Stored error details in: {error_file}")
-            
-        except Exception as error_log_error:
-            print(f"Failed to log error details: {str(error_log_error)}")
-            
-        # All methods failed
-        return False
-            
-    except Exception as e:
-        print(f"Unhandled error in record_route_creation: {str(e)}")
-        print(traceback.format_exc())
-        return False
+        except Exception as e:
+            print(f"Error recording route usage via RPC: {str(e)}")
+            return False
 
     def _ensure_usage_tracking_table_exists(self):
         """
@@ -742,6 +525,88 @@ def record_route_creation(self, user_id):
         # Log unknown events
         print(f"Unknown webhook event: {event_name}")
         return False
+    def record_algorithm_run(self, user_id):
+        """
+        Record an algorithm run for a user
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not user_id:
+            print("Cannot record algorithm run: Missing user_id")
+            return False
+        
+        try:
+            # Use the RPC method (which we know works)
+            print(f"Recording algorithm run for user {user_id}")
+            response = self.supabase.rpc(
+                'record_algorithm_run',  # New function name
+                {'p_user_id': user_id}
+            ).execute()
+            
+            # Simple success check
+            success = response and hasattr(response, 'data') and response.data is True
+            
+            print(f"Algorithm run recording {'succeeded' if success else 'failed'}: {response}")
+            return success
+            
+        except Exception as e:
+            print(f"Error recording algorithm run: {str(e)}")
+            return False
+    def get_algorithm_credits(self, user_id):
+        """
+        Get the remaining algorithm credits for a user
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            dict: Contains credits_used and max_credits
+        """
+        if not user_id:
+            return {'credits_used': 0, 'max_credits': 0}
+        
+        # Get user's subscription limits
+        limits = self.get_user_limits(user_id)
+        max_credits = limits.get('max_algorithm_runs', 10)  # Default to 10 if not specified
+        
+        try:
+            # Get current month usage
+            current_date = datetime.now(timezone.utc)
+            current_month = current_date.month
+            current_year = current_date.year
+            
+            # Calculate first and last day of the month
+            first_day = f"{current_year}-{current_month:02d}-01"
+            
+            # Calculate last day of the current month
+            if current_month == 12:
+                last_day = f"{current_year + 1}-01-01"
+            else:
+                last_day = f"{current_year}-{current_month + 1:02d}-01"
+            
+            # Query the database for algorithm runs this month
+            response = self.supabase.table('usage_tracking')\
+                .select('algorithm_runs')\
+                .eq('user_id', user_id)\
+                .gte('usage_date', first_day)\
+                .lt('usage_date', last_day)\
+                .execute()
+            
+            # Sum up algorithm runs
+            credits_used = sum(item.get('algorithm_runs', 0) for item in response.data) if response.data else 0
+            
+            return {
+                'credits_used': credits_used,
+                'max_credits': max_credits,
+                'credits_remaining': max(0, max_credits - credits_used)
+            }
+        except Exception as e:
+            print(f"Error getting algorithm credits: {str(e)}")
+            return {'credits_used': 0, 'max_credits': max_credits, 'credits_remaining': max_credits}
 
     def _handle_subscription_created(self, payload):
         """Handle subscription_created webhook event with improved user ID extraction"""
