@@ -1503,6 +1503,13 @@ def record_algorithm_run():
             'success': False,
             'error': str(e)
         }), 500
+            
+    except Exception as e:
+        print(f"Error recording algorithm run: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 @app.route('/record_route_usage', methods=['POST'])
 @login_required
 def record_route_usage():
@@ -1680,22 +1687,22 @@ def check_driver_limit_endpoint():
             'success': False,
             'error': str(e)
         }), 500
-@app.route('/debug-rls')
+@app.route('/test-usage-tracking')
 @login_required
-def debug_rls():
-    # Test all methods of writing to the database
+def test_usage_tracking():
     user_id = session['user']['id']
     results = {}
     
-    # 1. Try Supabase RPC
+    # Test all methods
     try:
+        # 1. RPC method
         response = supabase.rpc('record_route_usage', {'p_user_id': user_id}).execute()
         results['rpc'] = {'success': True, 'response': str(response)}
     except Exception as e:
         results['rpc'] = {'success': False, 'error': str(e)}
     
-    # 2. Try direct Supabase
     try:
+        # 2. Direct insert
         response = supabase.table('usage_tracking').insert({
             'user_id': user_id,
             'usage_date': datetime.now(timezone.utc).date().isoformat(),
@@ -1705,8 +1712,8 @@ def debug_rls():
     except Exception as e:
         results['direct'] = {'success': False, 'error': str(e)}
     
-    # 3. Try DB connection with service role
     try:
+        # 3. Service role approach
         conn = get_db_connection(use_service_role=True)
         with conn.cursor() as cursor:
             cursor.execute(
@@ -1715,12 +1722,10 @@ def debug_rls():
             )
             result = cursor.fetchone()
             conn.commit()
-            results['db_service'] = {'success': True, 'id': result['id'] if result else None}
+            results['service_role'] = {'success': True, 'id': result['id'] if result else None}
+        conn.close()
     except Exception as e:
-        results['db_service'] = {'success': False, 'error': str(e)}
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        results['service_role'] = {'success': False, 'error': str(e)}
     
     return jsonify(results)
 # Utility functions

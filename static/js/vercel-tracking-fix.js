@@ -166,7 +166,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         return window.pendingRecordingAttempt;
     };
-    // Add a new function to record algorithm runs
     window.recordAlgorithmRun = function() {
         console.log("Recording algorithm run...");
         
@@ -213,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
         });
     };
-
+    
     // Helper function to update credits display
     function updateCreditsDisplay(used, max) {
         const creditsElements = document.querySelectorAll('.algorithm-credits');
@@ -227,7 +226,6 @@ document.addEventListener('DOMContentLoaded', function() {
             bar.style.width = `${percentage}%`;
         });
     }
-    
     // Function to update UI elements showing route usage
     function updateRouteUsageDisplay(routesUsed, maxRoutes) {
         if (typeof routesUsed !== 'number' || typeof maxRoutes !== 'number') {
@@ -381,50 +379,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Functions for checking driver limits
-    window.checkDriverLimit = function(requestedDrivers) {
-        console.log(`Checking if ${requestedDrivers} drivers are allowed by subscription`);
-        
-        return new Promise((resolve, reject) => {
-            fetch('/check_driver_limit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    max_vehicles: requestedDrivers
-                }),
-                credentials: 'same-origin'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log(`Driver limit check passed: max allowed = ${data.max_allowed}`);
-                    resolve({
-                        allowed: true,
-                        maxAllowed: data.max_allowed
-                    });
-                } else {
-                    console.log(`Driver limit exceeded: ${data.error}`);
-                    resolve({
-                        allowed: false,
-                        maxAllowed: data.max_allowed,
-                        error: data.error
-                    });
-                }
-            })
-            .catch(error => {
-                console.error("Error checking driver limit:", error);
-                // Default to conservative limit of 3 drivers
-                resolve({
-                    allowed: requestedDrivers <= 3,
-                    maxAllowed: 3,
-                    error: "Error checking limit: " + error.message
-                });
-            });
-        });
-    };
-
     // Intercept solver calls to record usage
     if (typeof window.runClientSideSolver === 'function') {
         const originalRunClientSideSolver = window.runClientSideSolver;
@@ -432,24 +386,8 @@ document.addEventListener('DOMContentLoaded', function() {
         window.runClientSideSolver = function(params, jobId) {
             console.log("Intercepted client-side solver call to enforce limits and track usage");
             
-            // First check driver limit, then record usage, then solve
-            window.checkDriverLimit(params.max_vehicles)
-                .then(limitResult => {
-                    if (!limitResult.allowed) {
-                        // Update max vehicles parameter to the allowed value
-                        params.max_vehicles = limitResult.maxAllowed;
-                        console.log(`Adjusted max_vehicles to subscription limit: ${limitResult.maxAllowed}`);
-                        
-                        // Update the input field if possible
-                        const maxVehiclesInput = document.getElementById('maxVehiclesInput');
-                        if (maxVehiclesInput) {
-                            maxVehiclesInput.value = limitResult.maxAllowed;
-                        }
-                    }
-                    
-                    // Next, record route usage before solving
-                    return window.recordRouteUsage();
-                })
+            // First record usage, then run solver
+            window.recordRouteUsage()
                 .then(usageResult => {
                     console.log("Route usage recording result:", usageResult);
                     
@@ -475,19 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 })
                 .catch(error => {
-                    console.error("Error in solver chain:", error);
-                    
-                    // Show error message
-                    const solveInfoAlert = document.getElementById('solveInfoAlert');
-                    if (solveInfoAlert) {
-                        solveInfoAlert.innerHTML = `
-                            <div class="alert alert-danger">
-                                <i class="fas fa-exclamation-circle me-2"></i>
-                                ${error.message || "An error occurred while processing your request."}
-                            </div>
-                        `;
-                        solveInfoAlert.style.display = 'block';
-                    }
+                    console.error("Error recording usage:", error);
                     
                     // Reset solve button
                     const solveBtn = document.getElementById('solveBtn');

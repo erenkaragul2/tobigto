@@ -109,6 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log("Solve button handler attached");
     }, 1000);  // Wait 1 second to ensure all other scripts have loaded
     // In client-side solver code (vercel-solve-fix.js), before starting the solving process:
+    // In client-side solver code (vercel-solve-fix.js), before starting the solving process:
     window.recordAlgorithmRun().then(result => {
         if (result.success) {
             // Continue with solving
