@@ -1,12 +1,17 @@
-// Replace the content in vercel-tracking-fix.js with this enhanced version
+// Updated vercel-tracking-fix.js with improved reliability
 
-// Enhanced client-side usage tracking system with recovery mechanism
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("Loading enhanced usage tracking system (v3)");
+    console.log("Loading enhanced usage tracking system (v4)");
     
     // Flag to track if we've already recorded usage for the current session
-    window.routeUsageRecorded = false;
-    window.algorithmRunRecorded = false;
+    window.usageRecorded = {
+        route: false,
+        algorithm: false
+    };
+    
+    // Store original solve handler if it exists
+    let originalSolveHandler = null;
+    let originalRunClientSideSolver = null;
     
     // Track pending recording attempts
     window.pendingRecordingAttempt = null;
@@ -25,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Check if we've already recorded usage for this session
-        if (window.routeUsageRecorded) {
+        if (window.usageRecorded.route) {
             console.log("Route usage already recorded for this session");
             return Promise.resolve({ success: true, alreadyRecorded: true });
         }
@@ -72,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 if (data.success) {
                     console.log("Route usage recorded successfully", data);
-                    window.routeUsageRecorded = true;
+                    window.usageRecorded.route = true;
                     
                     // Save record in localStorage as backup
                     try {
@@ -95,13 +100,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Check if this is a limit reached error
                     if (data.limit_reached) {
                         handleRouteLimitReached(data);
-                        reject(new Error("Route limit reached"));
+                        reject({
+                            limitReached: true,
+                            message: data.error || "Route limit reached",
+                            redirect: data.redirect
+                        });
                     } 
                     // Check if server scheduled a retry
                     else if (data.retry_scheduled) {
                         console.log("Server scheduled a retry for next request");
                         // Mark as tentatively successful since server will retry
-                        window.routeUsageRecorded = true;
+                        window.usageRecorded.route = true;
                         resolve({
                             success: true,
                             message: "Server will retry on next request",
@@ -157,16 +166,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Function to record algorithm run with improved reliability
     window.recordAlgorithmRun = function(retryCount = 0) {
-        console.log("Recording algorithm run...");
-        
         // If already recorded in this session, don't record again
-        if (window.algorithmRunRecorded) {
+        if (window.usageRecorded.algorithm) {
             console.log("Algorithm run already recorded for this session");
             return Promise.resolve({
                 success: true,
                 alreadyRecorded: true
             });
         }
+        
+        console.log("Recording algorithm run...");
         
         // Create a timestamp for debugging
         const timestamp = new Date().toISOString();
@@ -202,11 +211,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(data => {
-            console.log("Algorithm run response:", data);
-            
             if (data.success) {
+                console.log("Algorithm run recorded successfully:", data);
+                
                 // Mark as recorded for this session
-                window.algorithmRunRecorded = true;
+                window.usageRecorded.algorithm = true;
                 
                 // Update credits display if it exists
                 updateCreditsDisplay(data.credits_used, data.max_credits);
@@ -214,8 +223,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return data;
             } else if (data.limit_reached) {
                 // Handle limit reached
+                console.error("Algorithm run limit reached:", data);
                 handleAlgorithmLimitReached(data);
-                throw new Error("Algorithm run limit reached");
+                throw {
+                    limitReached: true,
+                    message: data.error || "Algorithm run limit reached",
+                    redirect: data.redirect
+                };
             } else {
                 throw new Error(data.error || "Failed to record algorithm run");
             }
@@ -227,7 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
             queueTrackingAttempt('algorithm_run', requestData);
             
             // Retry with backoff if we haven't tried too many times
-            if (retryCount < 3) {
+            if (retryCount < 3 && !error.limitReached) {
                 console.log(`Retrying algorithm run recording (attempt ${retryCount + 1}/3)`);
                 
                 // Wait with exponential backoff and retry
@@ -242,12 +256,52 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
             
+            // If it's a limit reached error, propagate it
+            if (error.limitReached) {
+                throw error;
+            }
+            
             // Return a standardized error response
             return {
                 success: false,
                 error: error.message,
                 untracked: true
             };
+        });
+    };
+    
+    // Combined function to record both usage types before solving
+    window.recordUsageBeforeSolving = function() {
+        return new Promise((resolve, reject) => {
+            console.log("Recording usage before solving");
+            
+            // First record route creation
+            window.recordRouteUsage()
+                .then(routeResult => {
+                    console.log("Route usage result:", routeResult);
+                    
+                    // Then record algorithm run
+                    return window.recordAlgorithmRun();
+                })
+                .then(algorithmResult => {
+                    console.log("Algorithm run result:", algorithmResult);
+                    resolve({ route: true, algorithm: true });
+                })
+                .catch(error => {
+                    console.error("Error recording usage:", error);
+                    
+                    // Check if this is a limit reached error
+                    if (error && error.limitReached) {
+                        reject(error);
+                    } else {
+                        // Other errors, still resolve to allow solver to run
+                        resolve({ 
+                            route: window.usageRecorded.route, 
+                            algorithm: window.usageRecorded.algorithm,
+                            error: error.message
+                        });
+                    }
+                });
         });
     };
     
@@ -373,11 +427,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (item.type === 'route_usage') {
             // Temporarily disable the "already recorded" check
-            window.routeUsageRecorded = false;
+            window.usageRecorded.route = false;
             processPromise = window.recordRouteUsage();
         } else if (item.type === 'algorithm_run') {
             // Temporarily disable the "already recorded" check
-            window.algorithmRunRecorded = false;
+            window.usageRecorded.algorithm = false;
             processPromise = window.recordAlgorithmRun();
         } else {
             // Unknown type, skip
@@ -435,28 +489,154 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Initialize on load
-    function initTracking() {
+    // Function to reset tracking for testing
+    window.resetUsageTracking = function() {
+        window.usageRecorded = {
+            route: false,
+            algorithm: false
+        };
+        console.log("Usage tracking flags reset");
+        return "Usage tracking reset successfully";
+    };
+    
+    // Enhanced solve button handler
+    function enhanceSolveButtonWithTracking() {
+        const solveBtn = document.getElementById('solveBtn');
+        if (!solveBtn) {
+            console.error("Solve button not found - cannot apply tracking integration");
+            return;
+        }
+        
+        console.log("Enhancing solve button with tracking...");
+        
+        // Store original handler
+        originalSolveHandler = solveBtn.onclick;
+        
+        // Replace with enhanced handler
+        solveBtn.onclick = function(e) {
+            if (e) e.preventDefault();
+            
+            console.log("Enhanced solve handler triggered");
+            
+            // Show loading state
+            solveBtn.disabled = true;
+            solveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Recording usage...';
+            
+            // First record usage, then solve
+            window.recordUsageBeforeSolving()
+                .then(() => {
+                    console.log("Usage recorded successfully, proceeding with solve");
+                    
+                    // Reset button state
+                    solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
+                    
+                    // Simulate original handler invocation
+                    if (typeof originalSolveHandler === 'function') {
+                        originalSolveHandler.call(this);
+                    } else {
+                        console.warn("No original solve handler found");
+                        
+                        // Try to find and click the solve button to trigger any attached handlers
+                        solveBtn.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+                    }
+                })
+                .catch(error => {
+                    console.error("Error recording usage:", error);
+                    
+                    // Reset button state
+                    solveBtn.disabled = false;
+                    solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
+                    
+                    if (error && error.limitReached) {
+                        // Already handled in the specific handler functions
+                        console.log("Limit reached error already handled");
+                    } else {
+                        // For other errors, still try to run the solver
+                        console.log("Continuing with solve despite tracking error");
+                        if (typeof originalSolveHandler === 'function') {
+                            originalSolveHandler.call(this);
+                        }
+                    }
+                });
+                
+            // Prevent default and stop propagation
+            return false;
+        };
+        
+        console.log("Solve button enhanced with tracking");
+    }
+    
+    // Intercept client-side solver if it exists
+    function interceptClientSideSolver() {
+        if (typeof window.runClientSideSolver === 'function') {
+            console.log("Intercepting client-side solver function");
+            
+            // Store original function
+            originalRunClientSideSolver = window.runClientSideSolver;
+            
+            // Replace with enhanced version
+            window.runClientSideSolver = function(params, jobId) {
+                console.log("Intercepted client-side solver to record usage");
+                
+                // First record usage, then run solver
+                window.recordUsageBeforeSolving()
+                    .then(() => {
+                        console.log("Usage recorded successfully, proceeding with client-side solver");
+                        originalRunClientSideSolver(params, jobId);
+                    })
+                    .catch(error => {
+                        console.error("Error recording usage before client-side solver:", error);
+                        
+                        if (error && error.limitReached) {
+                            // Reset UI state
+                            const solveBtn = document.getElementById('solveBtn');
+                            if (solveBtn) {
+                                solveBtn.disabled = false;
+                                solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
+                            }
+                            
+                            // Hide progress container
+                            const solverProgressContainer = document.getElementById('solverProgressContainer');
+                            if (solverProgressContainer) {
+                                solverProgressContainer.style.display = 'none';
+                            }
+                        } else {
+                            // For other errors, still run the solver
+                            console.log("Continuing with client-side solver despite tracking error");
+                            originalRunClientSideSolver(params, jobId);
+                        }
+                    });
+            };
+            
+            console.log("Client-side solver intercepted successfully");
+        } else {
+            console.log("Client-side solver function not found - skipping interception");
+        }
+    }
+    
+    // Initialize tracking integration
+    function initTrackingIntegration() {
+        console.log("Initializing tracking integration...");
+        
         // Load tracking queue from localStorage
         loadTrackingQueue();
         
-        // Process queue on page load (but give a delay)
-        setTimeout(() => {
-            if (window.trackingQueue.length > 0) {
+        // Process any pending tracking attempts
+        if (window.trackingQueue && window.trackingQueue.length > 0) {
+            setTimeout(() => {
                 processTrackingQueue()
                     .then(result => {
-                        console.log("Processed tracking queue:", result);
+                        console.log("Processed tracking queue at startup:", result);
                     })
                     .catch(error => {
                         console.error("Error processing tracking queue:", error);
                     });
-            }
-        }, 5000);
+            }, 5000);
+        }
         
-        // Set up periodic queue processing
+        // Process queue periodically
         setInterval(() => {
-            if (window.trackingQueue.length > 0) {
-                console.log("Running periodic tracking queue processing");
+            if (window.trackingQueue && window.trackingQueue.length > 0) {
                 processTrackingQueue()
                     .then(result => {
                         console.log("Periodic queue processing complete:", result);
@@ -466,71 +646,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
             }
         }, 60000); // Check every minute
+        
+        // Enhance solve button with tracking
+        enhanceSolveButtonWithTracking();
+        
+        // Intercept client-side solver
+        interceptClientSideSolver();
+        
+        console.log("Tracking integration initialized");
     }
     
-    // Initialize tracking system
-    initTracking();
-    
-    // Intercept solver calls to record usage
-    if (typeof window.runClientSideSolver === 'function') {
-        const originalRunClientSideSolver = window.runClientSideSolver;
-        
-        window.runClientSideSolver = function(params, jobId) {
-            console.log("Intercepted client-side solver call to enforce limits and track usage");
-            
-            // First record usage, then run solver
-            window.recordRouteUsage()
-                .then(usageResult => {
-                    console.log("Route usage recording result:", usageResult);
-                    
-                    // If usage recording succeeded or we're proceeding despite potential tracking issues
-                    if (usageResult.success || usageResult.untracked) {
-                        // Also record algorithm run
-                        return window.recordAlgorithmRun().then(algorithmResult => {
-                            console.log("Algorithm run recording result:", algorithmResult);
-                            
-                            // Run the original solver
-                            originalRunClientSideSolver(params, jobId);
-                        });
-                    } else {
-                        console.error("Failed to record usage, not running solver");
-                        
-                        // Reset solve button
-                        const solveBtn = document.getElementById('solveBtn');
-                        if (solveBtn) {
-                            solveBtn.disabled = false;
-                            solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
-                        }
-                        
-                        // Hide progress container
-                        const solverProgressContainer = document.getElementById('solverProgressContainer');
-                        if (solverProgressContainer) {
-                            solverProgressContainer.style.display = 'none';
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error("Error recording usage:", error);
-                    
-                    // Reset solve button
-                    const solveBtn = document.getElementById('solveBtn');
-                    if (solveBtn) {
-                        solveBtn.disabled = false;
-                        solveBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Solving';
-                    }
-                    
-                    // Hide progress container
-                    const solverProgressContainer = document.getElementById('solverProgressContainer');
-                    if (solverProgressContainer) {
-                        solverProgressContainer.style.display = 'none';
-                    }
-                });
-        };
-        
-        console.log("Successfully intercepted client-side solver function");
-    } else {
-        console.warn("Could not find runClientSideSolver function to intercept");
-    }
-    
-    console.log("Enhanced usage tracking system loaded");
+    // Run initialization with a slight delay to ensure page is fully loaded
+    setTimeout(initTrackingIntegration, 1000);
 });
