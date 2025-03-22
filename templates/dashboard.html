@@ -110,72 +110,71 @@
                 </div>
             </div>
         </div>
-            <!-- Add this subscription info section to the dashboard.html template -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h4 class="mb-0">Subscription Status</h4>
-                </div>
-                <div class="card-body">
-                    {% if subscription %}
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name|default('Trial') }}</span></h5>
-                                <p class="text-muted">
-                                    Your subscription is currently <strong>{{ subscription.status|default('active') }}</strong>
-                                    {% if subscription.current_period_end %}
-                                        and will renew on {{ subscription.current_period_end|date }}
-                                    {% endif %}
-                                </p>
-                                <div class="mt-3">
-                                    <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">
-                                        <i class="fas fa-cog me-2"></i>Manage Subscription
-                                    </a>
-                                    <a href="{{ url_for('subscription.pricing') }}" class="btn btn-outline-secondary ms-2">
-                                        <i class="fas fa-exchange-alt me-2"></i>Change Plan
-                                    </a>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="alert alert-info">
-                                    <h6>Plan Features:</h6>
-                                    <ul class="mb-0">
-                                        {% if subscription.features %}
-                                            {% for feature in subscription.features %}
-                                                <li>{{ feature }}</li>
-                                            {% endfor %}
-                                        {% else %}
-                                            <li>Basic route optimization</li>
-                                            <li>Up to 5 routes per month</li>
-                                            <li>Up to 3 drivers</li>
+    
+        <!-- Subscription info section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">Subscription Status</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if subscription %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>Current Plan: <span class="badge bg-success">{{ subscription.plan_name|default('Trial') }}</span></h5>
+                                    <p class="text-muted">
+                                        Your subscription is currently <strong>{{ subscription.status|default('active') }}</strong>
+                                        {% if subscription.current_period_end %}
+                                            and will renew on {{ subscription.current_period_end|date }}
                                         {% endif %}
-                                    </ul>
+                                    </p>
+                                    <div class="mt-3">
+                                        <a href="{{ url_for('subscription.portal') }}" class="btn btn-outline-primary">
+                                            <i class="fas fa-cog me-2"></i>Manage Subscription
+                                        </a>
+                                        <a href="{{ url_for('subscription.pricing') }}" class="btn btn-outline-secondary ms-2">
+                                            <i class="fas fa-exchange-alt me-2"></i>Change Plan
+                                        </a>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="alert alert-info">
+                                        <h6>Plan Features:</h6>
+                                        <ul class="mb-0">
+                                            {% if subscription.features %}
+                                                {% for feature in subscription.features %}
+                                                    <li>{{ feature }}</li>
+                                                {% endfor %}
+                                            {% else %}
+                                                <li>Basic route optimization</li>
+                                                <li>Up to 5 routes per month</li>
+                                                <li>Up to 3 drivers</li>
+                                            {% endif %}
+                                        </ul>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    {% else %}
-                        <div class="alert alert-warning mb-0">
-                            <h5 class="alert-heading">No Active Subscription</h5>
-                            <p>You currently don't have an active subscription. Some features may be limited.</p>
-                            <hr>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>Choose a plan to unlock all features</div>
-                                <a href="{{ url_for('subscription.pricing') }}" class="btn btn-primary">
-                                    <i class="fas fa-tag me-2"></i>View Pricing Plans
-                                </a>
+                        {% else %}
+                            <div class="alert alert-warning mb-0">
+                                <h5 class="alert-heading">No Active Subscription</h5>
+                                <p>You currently don't have an active subscription. Some features may be limited.</p>
+                                <hr>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>Choose a plan to unlock all features</div>
+                                    <a href="{{ url_for('subscription.pricing') }}" class="btn btn-primary">
+                                        <i class="fas fa-tag me-2"></i>View Pricing Plans
+                                    </a>
+                                </div>
                             </div>
-                        </div>
-                    {% endif %}
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
         
         <div class="col-md-4">
-            <!-- Add this section to templates/dashboard.html -->
-            <!-- Replace the existing "Usage Stats" section -->
-
+            <!-- Usage Stats section -->
             <div class="card">
                 <div class="card-header">
                     <h4><i class="fas fa-chart-line me-2"></i>Usage Stats</h4>
@@ -292,7 +291,6 @@
 
 {% block scripts %}
 <script>
-    // Add this script to your dashboard.html file, inside the {% block scripts %} section
     document.addEventListener('DOMContentLoaded', function() {  
     // Function to refresh usage stats via AJAX
     function refreshUsageStats() {
