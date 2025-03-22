@@ -1445,9 +1445,8 @@ def handle_error(e):
 @login_required
 def record_route_usage():
     """
-    Endpoint for client-side solvers to record route usage
-    This ensures route credits are properly tracked when using
-    the Vercel compatibility mode
+    Enhanced endpoint for client-side solvers to record route usage
+    with better error handling and response data
     """
     try:
         # Get user ID from session
@@ -1458,6 +1457,20 @@ def record_route_usage():
                 'success': False,
                 'error': 'User not authenticated'
             }), 401
+        
+        # Extract request metadata for debugging
+        metadata = {}
+        try:
+            data = request.get_json(silent=True) or {}
+            metadata = {
+                'client_side': data.get('client_side', True),
+                'timestamp': data.get('timestamp'),
+                'browser': data.get('browser'),
+                'session_id': data.get('session_id')
+            }
+            print(f"Record route usage request metadata: {metadata}")
+        except Exception as metadata_error:
+            print(f"Error extracting metadata: {str(metadata_error)}")
         
         # Get subscription manager
         subscription_manager = get_subscription_manager()
@@ -1476,36 +1489,91 @@ def record_route_usage():
                 'redirect': url_for('subscription.pricing')
             }), 403
         
-        # Record route creation
-        success = subscription_manager.record_route_creation(user_id)
+        # Record route creation with retry
+        success = False
+        for attempt in range(3):  # Try up to 3 times
+            if attempt > 0:
+                print(f"Retry attempt {attempt} for user {user_id}")
+                time.sleep(1)  # Wait between retries
+                
+            success = subscription_manager.record_route_creation(user_id)
+            if success:
+                break
         
         if success:
-            # Get updated usage after recording
-            user_usage = subscription_manager.get_user_usage(user_id)
-            routes_used = user_usage.get('routes_created', 0)
+            # Get updated usage after recording - with error handling
+            try:
+                user_usage = subscription_manager.get_user_usage(user_id)
+                routes_used = user_usage.get('routes_created', 0)
+            except Exception as usage_error:
+                print(f"Error getting updated usage: {str(usage_error)}")
+                routes_used = routes_created + 1  # Estimate the new count
             
-            # Get user's subscription limits
-            user_limits = subscription_manager.get_user_limits(user_id)
-            max_routes = user_limits.get('max_routes', 5)
+            # Get user's subscription limits - with error handling
+            try:
+                user_limits = subscription_manager.get_user_limits(user_id)
+                max_routes = user_limits.get('max_routes', 5)
+            except Exception as limits_error:
+                print(f"Error getting user limits: {str(limits_error)}")
+                # Keep existing max_routes value from check_route_limit
             
             return jsonify({
                 'success': True,
                 'message': 'Route usage recorded successfully',
                 'routes_used': routes_used,
-                'max_routes': max_routes
+                'max_routes': max_routes,
+                'attempt_count': attempt + 1
             })
         else:
+            # Critical: Create a flag in session to retry on next request
+            session['pending_usage_record'] = {
+                'timestamp': datetime.now().isoformat(),
+                'user_id': user_id,
+                'metadata': metadata
+            }
+            
             return jsonify({
                 'success': False,
-                'error': 'Failed to record route usage'
+                'error': 'Failed to record route usage after multiple attempts',
+                'retry_scheduled': True
             }), 500
             
     except Exception as e:
+        import traceback
         print(f"Error recording route usage: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'traceback': traceback.format_exc()
         }), 500
+
+# Add a middleware to check for and process pending usage records
+@app.before_request
+def process_pending_usage_records():
+    """Check for and process any pending usage records"""
+    
+    # Only process on normal page loads, not API calls or static files
+    if request.endpoint and not request.path.startswith('/api/') and not request.path.startswith('/static/'):
+        try:
+            if 'user' in session and 'pending_usage_record' in session:
+                pending = session.pop('pending_usage_record')
+                
+                # Check if it's not too old (max 1 day)
+                from datetime import datetime, timedelta
+                timestamp = datetime.fromisoformat(pending['timestamp'])
+                if datetime.now() - timestamp < timedelta(days=1):
+                    print(f"Processing pending usage record for user {pending['user_id']}")
+                    
+                    # Get subscription manager
+                    subscription_manager = get_subscription_manager()
+                    
+                    # Try to record the usage
+                    subscription_manager.record_route_creation(pending['user_id'])
+                else:
+                    print(f"Discarding old pending usage record from {pending['timestamp']}")
+        except Exception as e:
+            print(f"Error processing pending usage record: {str(e)}")
 @app.route('/check_driver_limit', methods=['POST'])
 @login_required
 @with_db_connection(use_service_role=True)  # Use service role to bypass RLS

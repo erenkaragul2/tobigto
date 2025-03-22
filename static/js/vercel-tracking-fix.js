@@ -1,15 +1,15 @@
-// Enhanced route usage tracking system
-// Replace or update the existing vercel-tracking-fix.js file with this code
+// Enhanced client-side usage tracking system
+// Replace the existing content in vercel-tracking-fix.js with this code
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("Loading enhanced route usage tracking system");
+    console.log("Loading enhanced route usage tracking system (v2)");
     
     // Flag to track if we've already recorded usage for the current session
     window.routeUsageRecorded = false;
     // Track pending recording attempts
     window.pendingRecordingAttempt = null;
     
-    // Function to record route usage via API call with retry logic
+    // Function to record route usage via API call with improved retry logic
     window.recordRouteUsage = function(retryCount = 0) {
         // If already recording, return the pending promise
         if (window.pendingRecordingAttempt) {
@@ -46,7 +46,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify(requestData)
+                body: JSON.stringify(requestData),
+                // Add credentials to ensure cookies are sent
+                credentials: 'same-origin'
             })
             .then(response => {
                 // Handle non-JSON responses
@@ -65,6 +67,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log("Route usage recorded successfully", data);
                     window.routeUsageRecorded = true;
                     
+                    // Save record in localStorage as backup
+                    try {
+                        localStorage.setItem('lastRecordedUsage', JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            routes_used: data.routes_used,
+                            max_routes: data.max_routes
+                        }));
+                    } catch (e) {
+                        console.warn("Could not save to localStorage:", e);
+                    }
+                    
                     // Update any UI elements showing route usage
                     updateRouteUsageDisplay(data.routes_used, data.max_routes);
                     
@@ -76,7 +89,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (data.limit_reached) {
                         handleRouteLimitReached(data);
                         reject(new Error("Route limit reached"));
-                    } else {
+                    } 
+                    // Check if server scheduled a retry
+                    else if (data.retry_scheduled) {
+                        console.log("Server scheduled a retry for next request");
+                        // Mark as tentatively successful since server will retry
+                        window.routeUsageRecorded = true;
+                        resolve({
+                            success: true,
+                            message: "Server will retry on next request",
+                            retryScheduled: true
+                        });
+                    } 
+                    else {
                         reject(new Error(data.error || 'Unknown error recording usage'));
                     }
                 }
@@ -84,30 +109,53 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => {
                 console.error("Error recording route usage:", error);
                 
-                // Implement retry mechanism
+                // Implement retry mechanism with exponential backoff
                 if (retryCount < 3) {
                     console.log(`Retrying route usage recording (attempt ${retryCount + 1}/3)`);
                     
                     // Clear the pending promise
                     window.pendingRecordingAttempt = null;
                     
-                    // Wait and retry
+                    // Wait with exponential backoff and retry
+                    const backoffTime = 1000 * Math.pow(2, retryCount);
+                    console.log(`Waiting ${backoffTime}ms before retry`);
+                    
                     setTimeout(() => {
                         window.recordRouteUsage(retryCount + 1)
                             .then(resolve)
                             .catch(reject);
-                    }, 1000 * Math.pow(2, retryCount)); // Exponential backoff
+                    }, backoffTime);
                 } else {
-                    // Log failure but allow operation to continue
-                    showTrackingWarning();
-                    
-                    // Despite the error, let's consider it a "success" from the flow perspective
-                    // but mark it as untracked
-                    resolve({ 
-                        success: false, 
-                        error: error.message,
-                        untracked: true
-                    });
+                    // Try one last fallback - store in localStorage for recovery
+                    try {
+                        localStorage.setItem('pendingUsageRecord', JSON.stringify({
+                            timestamp: new Date().toISOString(),
+                            retryCount: retryCount,
+                            error: error.message,
+                            requestData: requestData
+                        }));
+                        console.log("Stored pending usage record in localStorage for recovery");
+                        
+                        // Show warning to the user
+                        showTrackingWarning();
+                        
+                        // Despite the error, let's consider it a "success" from the flow perspective
+                        // but mark it as untracked
+                        resolve({ 
+                            success: false, 
+                            error: error.message,
+                            untracked: true,
+                            fallbackStorage: true
+                        });
+                    } catch (storageError) {
+                        console.error("Failed to store in localStorage:", storageError);
+                        
+                        // Show more severe warning
+                        showTrackingError();
+                        
+                        // We've tried everything, consider it a failure
+                        reject(new Error("Failed to record usage after all attempts"));
+                    }
                 }
             })
             .finally(() => {
@@ -161,6 +209,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 modalEl = document.createElement('div');
                 modalEl.id = 'limitReachedModal';
                 modalEl.className = 'modal fade';
+                modalEl.setAttribute('tabindex', '-1');
                 modalEl.innerHTML = `
                     <div class="modal-dialog">
                         <div class="modal-content">
@@ -224,6 +273,97 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 10000);
     }
     
+    // Show more severe error when all tracking attempts fail
+    function showTrackingError() {
+        // Create an alert div to show the error
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show mt-3';
+        alertDiv.innerHTML = `
+            <strong>Error:</strong> We couldn't record your route usage after multiple attempts. Please reload the page and try again.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        // Find a suitable container to display the alert
+        const container = document.querySelector('.container') || document.body;
+        if (container.firstChild) {
+            container.insertBefore(alertDiv, container.firstChild);
+        } else {
+            container.appendChild(alertDiv);
+        }
+    }
+    
+    // Check for and try to recover any pending usage records on page load
+    function checkForPendingUsageRecords() {
+        try {
+            const pendingRecord = localStorage.getItem('pendingUsageRecord');
+            if (pendingRecord) {
+                const record = JSON.parse(pendingRecord);
+                const recordAge = new Date() - new Date(record.timestamp);
+                
+                // Only attempt recovery for records less than 24 hours old
+                if (recordAge < 24 * 60 * 60 * 1000) {
+                    console.log("Found pending usage record, attempting recovery");
+                    
+                    // Clear the record immediately to prevent multiple attempts
+                    localStorage.removeItem('pendingUsageRecord');
+                    
+                    // Try to record it now
+                    window.recordRouteUsage();
+                } else {
+                    // Record is too old, just remove it
+                    console.log("Found stale pending usage record, removing");
+                    localStorage.removeItem('pendingUsageRecord');
+                }
+            }
+        } catch (e) {
+            console.error("Error checking for pending usage records:", e);
+        }
+    }
+    
+    // Functions for checking driver limits
+    window.checkDriverLimit = function(requestedDrivers) {
+        console.log(`Checking if ${requestedDrivers} drivers are allowed by subscription`);
+        
+        return new Promise((resolve, reject) => {
+            fetch('/check_driver_limit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    max_vehicles: requestedDrivers
+                }),
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log(`Driver limit check passed: max allowed = ${data.max_allowed}`);
+                    resolve({
+                        allowed: true,
+                        maxAllowed: data.max_allowed
+                    });
+                } else {
+                    console.log(`Driver limit exceeded: ${data.error}`);
+                    resolve({
+                        allowed: false,
+                        maxAllowed: data.max_allowed,
+                        error: data.error
+                    });
+                }
+            })
+            .catch(error => {
+                console.error("Error checking driver limit:", error);
+                // Default to conservative limit of 3 drivers
+                resolve({
+                    allowed: requestedDrivers <= 3,
+                    maxAllowed: 3,
+                    error: "Error checking limit: " + error.message
+                });
+            });
+        });
+    };
+
     // Intercept solver calls to record usage
     if (typeof window.runClientSideSolver === 'function') {
         const originalRunClientSideSolver = window.runClientSideSolver;
@@ -307,6 +447,9 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.warn("Could not find runClientSideSolver function to intercept");
     }
+    
+    // Run recovery checks on page load
+    checkForPendingUsageRecords();
     
     console.log("Enhanced route usage tracking system loaded");
 });
