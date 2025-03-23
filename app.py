@@ -364,7 +364,7 @@ def inject_subscription_data():
         subscription_manager = get_subscription_manager()
         subscription = subscription_manager.get_user_subscription(session['user']['id'])
         subscription = subscription_manager.get_user_subscription(session['user']['id'])
-        credits_info = subscription_manager.get_algorithm_credits(session['user']['id'])
+        
         default_limits = {
             'max_routes': 5,
             'max_drivers': 3
@@ -374,8 +374,7 @@ def inject_subscription_data():
         if subscription:
             # Initialize with default limits
             subscription['limits'] = default_limits
-            subscription['credits_used'] = credits_info['credits_used']
-            subscription['credits_remaining'] = credits_info['credits_remaining']
+            
             
             plan_id = subscription.get('plan_id')
         # Get plan features if subscription exists
@@ -392,7 +391,7 @@ def inject_subscription_data():
         return {
             'subscription': subscription,
             'plans': subscription_manager.PLANS,
-            'credits_info': credits_info
+            
         }
     return {}
 # Public routes

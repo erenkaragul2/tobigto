@@ -494,7 +494,6 @@ class SubscriptionManager:
         if not user_id:
             return {
                 'routes_created': 0,
-                'algorithm_runs': 0,
                 'max_routes': 5,
                 'is_trial': True
             }

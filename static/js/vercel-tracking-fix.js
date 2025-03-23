@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Flag to track if we've already recorded usage for the current session
     window.usageRecorded = {
         route: false,
-        algorithm: false
+        
     };
     
     // Store original solve handler if it exists
@@ -176,13 +176,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(routeResult => {
                     console.log("Route usage result:", routeResult);
                     
-                    // Then record algorithm run
+                    
                     
                 })
-                .then(algorithmResult => {
-                    console.log("Algorithm run result:", algorithmResult);
-                    resolve({ route: true, algorithm: true });
-                })
+                
                 .catch(error => {
                     console.error("Error recording usage:", error);
                     
@@ -193,7 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Other errors, still resolve to allow solver to run
                         resolve({ 
                             route: window.usageRecorded.route, 
-                            algorithm: window.usageRecorded.algorithm,
+                            
                             error: error.message
                         });
                     }
@@ -202,19 +199,6 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     
     // Function to update credits display
-    function updateCreditsDisplay(used, max) {
-        const creditsElements = document.querySelectorAll('.algorithm-credits');
-        creditsElements.forEach(element => {
-            element.textContent = `${used}/${max}`;
-        });
-        
-        const progressBars = document.querySelectorAll('.credits-progress');
-        progressBars.forEach(bar => {
-            const percentage = Math.min(100, Math.round((used / max) * 100));
-            bar.style.width = `${percentage}%`;
-        });
-    }
-    
     // Function to update UI elements showing route usage
     function updateRouteUsageDisplay(routesUsed, maxRoutes) {
         if (typeof routesUsed !== 'number' || typeof maxRoutes !== 'number') {
@@ -256,18 +240,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Function to handle algorithm limit reached
-    function handleAlgorithmLimitReached(data) {
-        const errorMessage = data.error || 'You have reached your algorithm runs limit for this billing period.';
-        
-        // Show alert
-        alert(errorMessage + " Please upgrade your plan to continue.");
-        
-        // Redirect to pricing page if provided
-        if (data.redirect) {
-            window.location.href = data.redirect;
-        }
-    }
+   
     
     // Queue a tracking attempt for later recovery
     function queueTrackingAttempt(type, data) {
@@ -325,10 +298,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Temporarily disable the "already recorded" check
             window.usageRecorded.route = false;
             processPromise = window.recordRouteUsage();
-        } else if (item.type === 'algorithm_run') {
-            // Temporarily disable the "already recorded" check
-            window.usageRecorded.algorithm = false;
-        } else {
+        } 
+        else {
             // Unknown type, skip
             processPromise = Promise.resolve({ success: false, error: `Unknown tracking type: ${item.type}` });
         }
@@ -388,7 +359,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.resetUsageTracking = function() {
         window.usageRecorded = {
             route: false,
-            algorithm: false
+            
         };
         console.log("Usage tracking flags reset");
         return "Usage tracking reset successfully";
