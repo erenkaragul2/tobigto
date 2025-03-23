@@ -31,24 +31,15 @@ else:
     DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
     DB_PORT = os.environ.get('DB_PORT', '5432')
 
-def get_db_connection(use_service_role=False):
-    """Create a database connection, optionally using the service role to bypass RLS
-    
-    Args:
-        use_service_role: Whether to use the service role credentials
-        
-    Returns:
-        Database connection object
-    """
+def get_db_connection(use_service_role=True):
+    """Create database connection using service role credentials"""
     try:
         # Log connection attempt (for debugging)
-        logger.debug(f"Connecting to database: {DB_HOST}/{DB_NAME} as {'service role' if use_service_role else 'regular user'}")
+        print(f"Connecting to database: {DB_HOST}/{DB_NAME} as {'service role' if use_service_role else 'regular user'}")
         
         # If we need to use service role and have a service key
         if use_service_role and SERVICE_KEY:
-            # For Supabase - look for service key and use it instead of regular password
-            # The service key format is typically "service_role_key_value"
-            # Extract user from service key if needed or use the configured DB_USER
+            # For Supabase - use service key instead of regular password
             
             conn = psycopg2.connect(
                 host=DB_HOST,
@@ -82,7 +73,7 @@ def get_db_connection(use_service_role=False):
         return conn
         
     except Exception as e:
-        logger.error(f"Database connection error: {str(e)}")
+        print(f"Database connection error: {str(e)}")
         # Re-raise for higher-level handling
         raise
 

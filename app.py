@@ -29,10 +29,7 @@ import traceback
 
 from datetime import datetime, timezone  # Fix the timezone import error
 from db_connection import get_db_connection  # Fix the get_db_connection error
-from db_tracking import get_usage_tracker
 
-from batch_recording import batch_recording_bp
-app.register_blueprint(batch_recording_bp)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -285,63 +282,8 @@ def process_excel(filepath, filename):
             'success': False,
             'error': f'Error reading Excel file: {str(e)}'
         }
-@app.before_request
-def process_pending_usage_records():
-    """Process any pending usage records on each request"""
-    # Only process for authenticated users
-    if 'user' in session and session.get('user', {}).get('id'):
-        user_id = session['user']['id']
-        
-        # Only process on non-API endpoints to avoid unnecessary processing on AJAX calls
-        if not request.path.startswith('/api/') and not request.path.startswith('/static/'):
-            try:
-                # Get the tracker and process pending records
-                tracker = get_usage_tracker()
-                tracker.process_pending_records(user_id)
-            except Exception as e:
-                print(f"Error processing pending records: {str(e)}")
-                # Don't interrupt the request flow
 
-# Add this debug endpoint to app.py
-@app.route('/debug/usage-tracking', methods=['GET'])
-@login_required
-def debug_usage_tracking():
-    """Debug endpoint to test usage tracking"""
-    user_id = session['user']['id']
-    tracker = get_usage_tracker()
-    
-    # Process any pending records first
-    process_result = tracker.process_pending_records(user_id)
-    
-    # Get current stats
-    stats_result = tracker.get_usage_stats(user_id)
-    
-    # Add test record
-    if request.args.get('test') == 'route':
-        test_result = tracker.record_route_creation(user_id)
-    elif request.args.get('test') == 'algorithm':
-        test_result = tracker.record_algorithm_run(user_id)
-    else:
-        test_result = {'success': False, 'message': 'No test specified. Use ?test=route or ?test=algorithm to run a test'}
-    
-    # Get updated stats
-    updated_stats = None
-    if test_result.get('success', False):
-        updated_stats = tracker.get_usage_stats(user_id)
-    
-    # Get pending records from session
-    pending_records = session.get('pending_usage_records', [])
-    
-    return jsonify({
-        'success': True,
-        'user_id': user_id,
-        'pending_records_processing': process_result,
-        'current_stats': stats_result,
-        'test_result': test_result,
-        'updated_stats': updated_stats,
-        'pending_records': pending_records,
-        'session_keys': list(session.keys())
-    })
+
 # Sample data endpoint
 @file_bp.route('/sample_data', methods=['GET'])
 def get_sample_data():
@@ -1554,88 +1496,159 @@ def reset_tracking_debug():
             'success': False,
             'error': str(e)
         }), 500
-
-@app.route('/debug/fix-algorithm-runs', methods=['POST'])
+@app.route('/debug/credits-info')
 @login_required
-def fix_algorithm_runs_debug():
-    """Debug endpoint to fix algorithm runs count for the current user"""
-    try:
-        user_id = session['user']['id']
-        requested_count = request.json.get('count', 1)
+def debug_credits_info():
+    """Debug endpoint to check algorithm credits info"""
+    user_id = session['user']['id']
+    
+    # Get subscription manager
+    subscription_manager = get_subscription_manager()
+    
+    # Get credits info
+    credits_info = subscription_manager.get_algorithm_credits(user_id)
+    
+    # Get direct usage stats
+    from service_client import get_usage_stats_with_service_role
+    direct_stats = get_usage_stats_with_service_role(user_id)
+    
+    # Get subscription info
+    subscription = subscription_manager.get_user_subscription(user_id)
+    
+    return jsonify({
+        'user_id': user_id,
+        'credits_info': credits_info,
+        'direct_stats': direct_stats,
+        'subscription': {k: v for k, v in subscription.items() if k != 'features'} if subscription else None
+    })
+@app.route('/debug/usage-tracking', methods=['GET'])
+@login_required
+def debug_usage_tracking():
+    """Debug endpoint to test usage tracking"""
+    user_id = session['user']['id']
+    
+    # Import service client utilities
+    from service_client import get_service_client, record_usage_with_service_role, get_usage_stats_with_service_role
+    
+    # Process any pending records first
+    process_result = {}
+    pending_records = session.get('pending_usage_records', [])
+    
+    if pending_records:
+        processed_indices = []
+        processed_count = 0
         
-        # Validate count
-        if not isinstance(requested_count, int) or requested_count < 0 or requested_count > 100:
+        for i, record in enumerate(pending_records):
+            if record.get('user_id') != user_id:
+                continue
+                
+            usage_type = record.get('type')
+            if usage_type not in ['route_creation', 'algorithm_run']:
+                continue
+                
+            result = record_usage_with_service_role(user_id, usage_type)
+            
+            if result.get('success'):
+                processed_indices.append(i)
+                processed_count += 1
+        
+        # Remove processed records from session
+        new_pending = [record for i, record in enumerate(pending_records) if i not in processed_indices]
+        session['pending_usage_records'] = new_pending
+        session.modified = True
+        
+        process_result = {
+            'processed': processed_count,
+            'remaining': len(new_pending)
+        }
+    
+    # Get current stats
+    stats_result = get_usage_stats_with_service_role(user_id)
+    
+    # Add test record
+    if request.args.get('test') == 'route':
+        test_result = record_usage_with_service_role(user_id, 'route_creation')
+    elif request.args.get('test') == 'algorithm':
+        test_result = record_usage_with_service_role(user_id, 'algorithm_run')
+    else:
+        test_result = {'success': False, 'message': 'No test specified. Use ?test=route or ?test=algorithm to run a test'}
+    
+    # Get updated stats
+    updated_stats = None
+    if test_result.get('success', False):
+        updated_stats = get_usage_stats_with_service_role(user_id)
+    
+    # Get pending records from session
+    pending_records = session.get('pending_usage_records', [])
+    
+    return jsonify({
+        'success': True,
+        'user_id': user_id,
+        'pending_records_processing': process_result,
+        'current_stats': stats_result,
+        'test_result': test_result,
+        'updated_stats': updated_stats,
+        'pending_records': pending_records,
+        'session_keys': list(session.keys())
+    })
+@app.route('/record_algorithm_run', methods=['POST'])
+@login_required
+def record_algorithm_run_endpoint():
+    """Endpoint for recording algorithm run with service role client"""
+    try:
+        # Get user ID from session
+        user_id = session.get('user', {}).get('id')
+        
+        if not user_id:
             return jsonify({
                 'success': False,
-                'error': 'Invalid count. Must be an integer between 0 and 100.'
-            }), 400
-            
-        # Get today's date
-        today = datetime.now(timezone.utc).date()
+                'error': 'User not authenticated'
+            }), 401
         
-        # Use a direct database connection with service role to bypass RLS
-        conn = get_db_connection(use_service_role=True)
-        updated = False
+        # Import the service client utility
+        from service_client import record_usage_with_service_role
         
-        try:
-            with conn.cursor() as cursor:
-                # Check if record exists for today
-                cursor.execute(
-                    """
-                    SELECT id, algorithm_runs FROM usage_tracking 
-                    WHERE user_id = %s AND usage_date = %s
-                    """,
-                    (user_id, today)
-                )
+        # Record usage with service role
+        result = record_usage_with_service_role(user_id, 'algorithm_run')
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': 'Algorithm run recorded successfully',
+                'method': result.get('method')
+            })
+        else:
+            # Fall back to session-based storage if service role fails
+            if 'pending_usage_records' not in session:
+                session['pending_usage_records'] = []
                 
-                existing = cursor.fetchone()
-                
-                if existing:
-                    # Update existing record
-                    cursor.execute(
-                        """
-                        UPDATE usage_tracking 
-                        SET algorithm_runs = %s, updated_at = NOW()
-                        WHERE id = %s
-                        RETURNING id
-                        """,
-                        (requested_count, existing['id'])
-                    )
-                    updated = True
-                else:
-                    # Insert new record
-                    cursor.execute(
-                        """
-                        INSERT INTO usage_tracking 
-                        (user_id, usage_date, routes_created, algorithm_runs) 
-                        VALUES (%s, %s, %s, %s)
-                        RETURNING id
-                        """,
-                        (user_id, today, 0, requested_count)
-                    )
-                    updated = True
-                
-                conn.commit()
-        finally:
-            conn.close()
+            session['pending_usage_records'].append({
+                'type': 'algorithm_run',
+                'user_id': user_id,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+            session.modified = True
             
-        return jsonify({
-            'success': True,
-            'updated': updated,
-            'algorithm_runs': requested_count,
-            'message': f"Fixed algorithm runs count to {requested_count} for user {user_id}"
-        })
+            return jsonify({
+                'success': True,
+                'warning': 'Service client failed, stored in session for later processing',
+                'error': result.get('error'),
+                'fallback': True
+            })
             
     except Exception as e:
-        print(f"Error fixing algorithm runs: {str(e)}")
+        import traceback
+        print(f"Error recording algorithm run: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
-@app.route('/record_algorithm_run', methods=['POST'])
+
+@app.route('/process_pending_records', methods=['POST'])
 @login_required
-def record_algorithm_run_endpoint():
-    """Enhanced endpoint for recording algorithm run with robust error handling"""
+def process_pending_records():
+    """Process any pending usage records stored in the session"""
     try:
         # Get user ID from session
         user_id = session.get('user', {}).get('id')
@@ -1646,182 +1659,212 @@ def record_algorithm_run_endpoint():
                 'error': 'User not authenticated'
             }), 401
         
-        # Log the recording attempt
-        print(f"Recording algorithm run for user {user_id}")
+        # Check if there are any pending records
+        pending_records = session.get('pending_usage_records', [])
         
-        # Check if user has hit their algorithm run limit
-        subscription_manager = get_subscription_manager()
-        credits_info = subscription_manager.get_algorithm_credits(user_id)
-        
-        credits_used = credits_info.get('credits_used', 0)
-        max_credits = credits_info.get('max_credits', 10)
-        
-        if credits_used >= max_credits:
-            print(f"Algorithm run limit reached for user {user_id}: {credits_used}/{max_credits}")
+        if not pending_records:
             return jsonify({
-                'success': False,
-                'error': f'Algorithm run limit reached ({credits_used}/{max_credits})',
-                'limit_reached': True,
-                'credits_used': credits_used,
-                'max_credits': max_credits,
-                'redirect': url_for('subscription.pricing')
-            }), 403
+                'success': True,
+                'message': 'No pending records to process'
+            })
         
-        # Try multiple methods to record usage
+        # Import the service client utility
+        from service_client import record_usage_with_service_role
         
-        # Method 1: Use Subscription Manager
-        try:
-            print(f"Attempting to record algorithm run via Subscription Manager for user {user_id}")
-            success = subscription_manager.record_algorithm_run(user_id)
+        # Process each record
+        results = {
+            'success': True,
+            'total': len(pending_records),
+            'processed': 0,
+            'failed': 0,
+            'details': []
+        }
+        
+        # Keep track of records to remove
+        processed_indices = []
+        
+        for i, record in enumerate(pending_records):
+            if record.get('user_id') != user_id:
+                # Skip records for other users
+                continue
+                
+            usage_type = record.get('type')
+            if usage_type not in ['route_creation', 'algorithm_run']:
+                # Skip records with invalid type
+                continue
+                
+            # Try to process the record
+            result = record_usage_with_service_role(user_id, usage_type)
             
-            if success:
-                print(f"Successfully recorded algorithm run via Subscription Manager for user {user_id}")
-                
-                # Get updated credits info
-                updated_credits = subscription_manager.get_algorithm_credits(user_id)
-                
-                return jsonify({
+            if result.get('success'):
+                processed_indices.append(i)
+                results['processed'] += 1
+                results['details'].append({
+                    'type': usage_type,
                     'success': True,
-                    'message': 'Algorithm run recorded successfully via Subscription Manager',
-                    'method': 'subscription_manager',
-                    'credits_used': updated_credits.get('credits_used', 0),
-                    'max_credits': updated_credits.get('max_credits', 10),
-                    'credits_remaining': updated_credits.get('credits_remaining', 0)
+                    'method': result.get('method')
                 })
-        except Exception as e:
-            print(f"Error recording algorithm run via Subscription Manager: {str(e)}")
-        
-        # Method 2: Use DB Tracking if available
-        try:
-            from db_tracking import get_usage_tracker
-            print(f"Attempting to record algorithm run via DB tracking for user {user_id}")
-            
-            tracker = get_usage_tracker()
-            result = tracker.record_algorithm_run(user_id)
-            
-            if result.get('success', False):
-                print(f"Successfully recorded algorithm run via DB tracking for user {user_id}")
-                
-                # Get updated credits info
-                stats = tracker.get_usage_stats(user_id)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Algorithm run recorded successfully via DB tracking',
-                    'method': result.get('method'),
-                    'credits_used': stats.get('algorithm_runs', 0),
-                    'max_credits': max_credits,
-                    'credits_remaining': max(0, max_credits - stats.get('algorithm_runs', 0))
+            else:
+                results['failed'] += 1
+                results['details'].append({
+                    'type': usage_type,
+                    'success': False,
+                    'error': result.get('error')
                 })
-        except Exception as e:
-            print(f"Error recording algorithm run via DB tracking: {str(e)}")
         
-        # Method 3: Direct Database Access with Service Role
-        try:
-            print(f"Attempting to record algorithm run via direct DB access for user {user_id}")
-            conn = get_db_connection(use_service_role=True)
-            
-            try:
-                with conn.cursor() as cursor:
-                    # Get today's date
-                    today = datetime.now(timezone.utc).date()
-                    
-                    # Check if record exists for today
-                    cursor.execute(
-                        """
-                        SELECT id, algorithm_runs FROM usage_tracking 
-                        WHERE user_id = %s AND usage_date = %s
-                        """, 
-                        (user_id, today)
-                    )
-                    
-                    existing = cursor.fetchone()
-                    
-                    if existing:
-                        # Update existing record
-                        current_count = existing['algorithm_runs'] or 0
-                        cursor.execute(
-                            """
-                            UPDATE usage_tracking 
-                            SET algorithm_runs = %s, updated_at = NOW()
-                            WHERE id = %s
-                            RETURNING id
-                            """,
-                            (current_count + 1, existing['id'])
-                        )
-                    else:
-                        # Insert new record
-                        cursor.execute(
-                            """
-                            INSERT INTO usage_tracking 
-                            (user_id, usage_date, routes_created, algorithm_runs) 
-                            VALUES (%s, %s, %s, %s)
-                            RETURNING id
-                            """,
-                            (user_id, today, 0, 1)
-                        )
-                        
-                    result = cursor.fetchone()
-                    conn.commit()
-                    
-                    if result and 'id' in result:
-                        print(f"Successfully recorded algorithm run via direct DB for user {user_id}")
-                        
-                        # Get updated credits info
-                        updated_credits_used = credits_used + 1
-                        
-                        return jsonify({
-                            'success': True,
-                            'message': 'Algorithm run recorded successfully via direct DB',
-                            'method': 'direct_db',
-                            'credits_used': updated_credits_used,
-                            'max_credits': max_credits,
-                            'credits_remaining': max(0, max_credits - updated_credits_used)
-                        })
-            finally:
-                conn.close()
-        except Exception as e:
-            print(f"Error recording algorithm run via direct DB: {str(e)}")
-        
-        # All methods failed, store in session for later recovery
-        print(f"All recording methods failed for algorithm run for user {user_id}")
-        
-        if 'pending_usage_records' not in session:
-            session['pending_usage_records'] = []
-            
-        session['pending_usage_records'].append({
-            'type': 'algorithm_run',
-            'user_id': user_id,
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        })
+        # Remove processed records from session
+        new_pending = [record for i, record in enumerate(pending_records) if i not in processed_indices]
+        session['pending_usage_records'] = new_pending
         session.modified = True
         
-        # Return success anyway to allow operation, but with a flag
-        return jsonify({
-            'success': True,
-            'warning': 'Tracking temporarily stored in session for later recovery',
-            'method': 'session_fallback',
-            'credits_used': credits_used + 1,  # Optimistically increment
-            'max_credits': max_credits,
-            'credits_remaining': max(0, max_credits - (credits_used + 1))
-        })
+        results['remaining'] = len(new_pending)
+        
+        return jsonify(results)
             
     except Exception as e:
         import traceback
-        print(f"Unhandled error in record_algorithm_run: {str(e)}")
+        print(f"Error processing pending records: {str(e)}")
         print(traceback.format_exc())
-        
-        # Return success anyway to not block operation
         return jsonify({
-            'success': True,
-            'error': str(e),
-            'fallback': True,
-            'message': 'Error recording algorithm run, but operation allowed to continue'
-        })
+            'success': False,
+            'error': str(e)
+        }), 500
+@app.route('/debug/service_role', methods=['GET'])
+@login_required
+def debug_service_role():
+    """Debug endpoint to test service role connection"""
+    user_id = session['user']['id']
+    
+    results = {
+        'service_role_connection': {},
+        'regular_connection': {},
+        'environment_vars': {}
+    }
+    
+    # Check environment variables (redacted for security)
+    for key in ['SUPABASE_SERVICE_KEY', 'DATABASE_URL', 'SUPABASE_URL']:
+        value = os.environ.get(key)
+        results['environment_vars'][key] = {
+            'exists': value is not None,
+            'length': len(value) if value else 0
+        }
+    
+    # Test service role connection
+    try:
+        conn = get_db_connection(use_service_role=True)
+        results['service_role_connection']['success'] = True
+        
+        with conn.cursor() as cursor:
+            # Test table access
+            cursor.execute("""
+                SELECT EXISTS (
+                   SELECT FROM pg_tables
+                   WHERE schemaname = 'public'
+                   AND tablename = 'usage_tracking'
+                );
+            """)
+            
+            exists = cursor.fetchone()['exists']
+            results['service_role_connection']['table_exists'] = exists
+            
+            if exists:
+                # Try to insert a test record
+                now = datetime.now(timezone.utc)
+                cursor.execute(
+                    """
+                    INSERT INTO usage_tracking 
+                    (user_id, usage_date, routes_created, algorithm_runs, notes) 
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (user_id, now.date(), 0, 0, f"Service role test {now.isoformat()}")
+                )
+                
+                result = cursor.fetchone()
+                results['service_role_connection']['test_insert_id'] = result['id'] if result else None
+                conn.commit()
+        
+        conn.close()
+    except Exception as e:
+        results['service_role_connection']['success'] = False
+        results['service_role_connection']['error'] = str(e)
+    
+    return jsonify(results)
+@app.route('/debug/service_client', methods=['GET'])
+@login_required
+def debug_service_client():
+    """Debug endpoint to test service client bypassing RLS"""
+    user_id = session['user']['id']
+    
+    results = {
+        'service_client': {},
+        'environment_vars': {}
+    }
+    
+    # Check environment variables (redacted for security)
+    for key in ['SUPABASE_SERVICE_KEY', 'SUPABASE_URL']:
+        value = os.environ.get(key)
+        results['environment_vars'][key] = {
+            'exists': value is not None,
+            'length': len(value) if value else 0
+        }
+    
+    # Test service client
+    try:
+        service_client = get_service_client()
+        
+        if not service_client:
+            results['service_client']['success'] = False
+            results['service_client']['error'] = 'Could not create service client'
+            return jsonify(results)
+            
+        results['service_client']['success'] = True
+        
+        # Test table access
+        try:
+            # Check user profiles (RLS protected table)
+            response = service_client.table('profiles').select('*').limit(5).execute()
+            
+            results['service_client']['profiles_success'] = True
+            results['service_client']['profiles_count'] = len(response.data) if hasattr(response, 'data') else 0
+        except Exception as e:
+            results['service_client']['profiles_success'] = False
+            results['service_client']['profiles_error'] = str(e)
+        
+        # Test if usage_tracking table exists/is accessible
+        try:
+            response = service_client.table('usage_tracking').select('count').limit(1).execute()
+            
+            results['service_client']['usage_tracking_exists'] = True
+            
+            # Try to insert a test record
+            now = datetime.now(timezone.utc)
+            test_data = {
+                'user_id': user_id,
+                'usage_date': now.date().isoformat(),
+                'routes_created': 0,
+                'algorithm_runs': 0,
+                'notes': f"Service client test {now.isoformat()}"
+            }
+            
+            insert_response = service_client.table('usage_tracking').insert(test_data).execute()
+            
+            results['service_client']['test_insert'] = True
+            results['service_client']['test_insert_data'] = insert_response.data
+            
+        except Exception as e:
+            results['service_client']['usage_tracking_error'] = str(e)
+    
+    except Exception as e:
+        results['service_client']['success'] = False
+        results['service_client']['error'] = str(e)
+    
+    return jsonify(results)
+
 @app.route('/record_route_usage', methods=['POST'])
 @login_required
 def record_route_usage_endpoint():
-    """Enhanced endpoint for recording route usage with robust error handling"""
+    """Endpoint for recording route usage with service role client"""
     try:
         # Get user ID from session
         user_id = session.get('user', {}).get('id')
@@ -1832,168 +1875,45 @@ def record_route_usage_endpoint():
                 'error': 'User not authenticated'
             }), 401
         
-        # Log the recording attempt
-        print(f"Recording route usage for user {user_id}")
+        # Import the service client utility
+        from service_client import record_usage_with_service_role
         
-        # First check if user has hit their route limit
-        subscription_manager = get_subscription_manager()
+        # Record usage with service role
+        result = record_usage_with_service_role(user_id, 'route_creation')
         
-        has_routes_left, routes_created, max_routes = subscription_manager.check_route_limit(user_id)
-        
-        if not has_routes_left:
-            print(f"Route limit reached for user {user_id}: {routes_created}/{max_routes}")
+        if result['success']:
             return jsonify({
-                'success': False,
-                'error': f'Route limit reached ({routes_created}/{max_routes})',
-                'limit_reached': True,
-                'routes_used': routes_created,
-                'max_routes': max_routes,
-                'redirect': url_for('subscription.pricing')
-            }), 403
-        
-        # Try multiple methods to record usage
-        
-        # Method 1: Use Subscription Manager
-        try:
-            print(f"Attempting to record via Subscription Manager for user {user_id}")
-            success = subscription_manager.record_route_creation(user_id)
-            
-            if success:
-                print(f"Successfully recorded route usage via Subscription Manager for user {user_id}")
+                'success': True,
+                'message': 'Route usage recorded successfully',
+                'method': result.get('method')
+            })
+        else:
+            # Fall back to session-based storage if service role fails
+            if 'pending_usage_records' not in session:
+                session['pending_usage_records'] = []
                 
-                # Get updated usage
-                user_usage = subscription_manager.get_user_usage(user_id)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Route usage recorded successfully via Subscription Manager',
-                    'method': 'subscription_manager',
-                    'routes_used': user_usage.get('routes_created', 0),
-                    'max_routes': max_routes
-                })
-        except Exception as e:
-            print(f"Error recording via Subscription Manager: {str(e)}")
-        
-        # Method 2: Use DB Tracking if available
-        try:
-            from db_tracking import get_usage_tracker
-            print(f"Attempting to record via DB tracking for user {user_id}")
+            session['pending_usage_records'].append({
+                'type': 'route_creation',
+                'user_id': user_id,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+            session.modified = True
             
-            tracker = get_usage_tracker()
-            result = tracker.record_route_creation(user_id)
-            
-            if result.get('success', False):
-                print(f"Successfully recorded route usage via DB tracking for user {user_id}")
-                
-                # Get updated usage
-                stats = tracker.get_usage_stats(user_id)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Route usage recorded successfully via DB tracking',
-                    'method': result.get('method'),
-                    'routes_used': stats.get('routes_created', 0),
-                    'max_routes': max_routes
-                })
-        except Exception as e:
-            print(f"Error recording via DB tracking: {str(e)}")
-        
-        # Method 3: Direct Database Access with Service Role
-        try:
-            print(f"Attempting to record via direct DB access for user {user_id}")
-            conn = get_db_connection(use_service_role=True)
-            
-            try:
-                with conn.cursor() as cursor:
-                    # Get today's date
-                    today = datetime.now(timezone.utc).date()
-                    
-                    # Check if record exists for today
-                    cursor.execute(
-                        """
-                        SELECT id, routes_created FROM usage_tracking 
-                        WHERE user_id = %s AND usage_date = %s
-                        """, 
-                        (user_id, today)
-                    )
-                    
-                    existing = cursor.fetchone()
-                    
-                    if existing:
-                        # Update existing record
-                        current_count = existing['routes_created'] or 0
-                        cursor.execute(
-                            """
-                            UPDATE usage_tracking 
-                            SET routes_created = %s, updated_at = NOW()
-                            WHERE id = %s
-                            RETURNING id
-                            """,
-                            (current_count + 1, existing['id'])
-                        )
-                    else:
-                        # Insert new record
-                        cursor.execute(
-                            """
-                            INSERT INTO usage_tracking 
-                            (user_id, usage_date, routes_created, algorithm_runs) 
-                            VALUES (%s, %s, %s, %s)
-                            RETURNING id
-                            """,
-                            (user_id, today, 1, 0)
-                        )
-                        
-                    result = cursor.fetchone()
-                    conn.commit()
-                    
-                    if result and 'id' in result:
-                        print(f"Successfully recorded route usage via direct DB for user {user_id}")
-                        return jsonify({
-                            'success': True,
-                            'message': 'Route usage recorded successfully via direct DB',
-                            'method': 'direct_db',
-                            'routes_used': routes_created + 1,
-                            'max_routes': max_routes
-                        })
-            finally:
-                conn.close()
-        except Exception as e:
-            print(f"Error recording via direct DB: {str(e)}")
-        
-        # All methods failed, store in session for later recovery
-        print(f"All recording methods failed for user {user_id}")
-        
-        if 'pending_usage_records' not in session:
-            session['pending_usage_records'] = []
-            
-        session['pending_usage_records'].append({
-            'type': 'route_creation',
-            'user_id': user_id,
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        })
-        session.modified = True
-        
-        # Return success anyway to allow operation, but with a flag
-        return jsonify({
-            'success': True,
-            'warning': 'Tracking temporarily stored in session for later recovery',
-            'method': 'session_fallback',
-            'routes_used': routes_created + 1,  # Optimistically increment
-            'max_routes': max_routes
-        })
+            return jsonify({
+                'success': True,
+                'warning': 'Service client failed, stored in session for later processing',
+                'error': result.get('error'),
+                'fallback': True
+            })
             
     except Exception as e:
         import traceback
-        print(f"Unhandled error in record_route_usage: {str(e)}")
+        print(f"Error recording route usage: {str(e)}")
         print(traceback.format_exc())
-        
-        # Return success anyway to not block operation
         return jsonify({
-            'success': True,
-            'error': str(e),
-            'fallback': True,
-            'message': 'Error recording usage, but operation allowed to continue'
-        })
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # Add a middleware to check for and process pending usage records
 @app.before_request
@@ -2004,157 +1924,41 @@ def process_pending_usage_records():
         user_id = session['user']['id']
         
         # Only process on non-API endpoints to avoid unnecessary processing on AJAX calls
-        if 'pending_usage_records' in session and session['pending_usage_records']:
-            # Process each record
-            still_pending = []
-            processed = 0
-            
-            for record in session['pending_usage_records']:
-                # Skip records for other users
-                if record.get('user_id') != user_id:
-                    still_pending.append(record)
-                    continue
-                    
-                # Skip records that are too old (older than 7 days)
-                try:
-                    timestamp = datetime.fromisoformat(record.get('timestamp', ''))
-                    now = datetime.now(timezone.utc)
-                    if (now - timestamp).days > 7:
-                        continue
-                except Exception:
-                    # If timestamp is invalid, skip record
-                    continue
-                    
-                # Process based on record type
-                record_type = record.get('type')
-                success = False
+        if not request.path.startswith('/api/') and not request.path.startswith('/static/'):
+            try:
+                # Get pending records
+                pending_records = session.get('pending_usage_records', [])
                 
-                if record_type == 'route_creation':
-                    # Try subscription manager
-                    try:
-                        subscription_manager = get_subscription_manager()
-                        success = subscription_manager.record_route_creation(user_id)
-                    except Exception as e:
-                        print(f"Error recovering route creation via subscription manager: {str(e)}")
+                if pending_records:
+                    # Import the service client utility
+                    from service_client import record_usage_with_service_role
                     
-                    # If failed, try direct DB
-                    if not success:
-                        try:
-                            conn = get_db_connection(use_service_role=True)
-                            try:
-                                with conn.cursor() as cursor:
-                                    today = datetime.now(timezone.utc).date()
-                                    
-                                    cursor.execute(
-                                        """
-                                        SELECT id, routes_created FROM usage_tracking 
-                                        WHERE user_id = %s AND usage_date = %s
-                                        """, 
-                                        (user_id, today)
-                                    )
-                                    
-                                    existing = cursor.fetchone()
-                                    
-                                    if existing:
-                                        # Update existing record
-                                        current_count = existing['routes_created'] or 0
-                                        cursor.execute(
-                                            """
-                                            UPDATE usage_tracking 
-                                            SET routes_created = %s, updated_at = NOW()
-                                            WHERE id = %s
-                                            RETURNING id
-                                            """,
-                                            (current_count + 1, existing['id'])
-                                        )
-                                    else:
-                                        # Insert new record
-                                        cursor.execute(
-                                            """
-                                            INSERT INTO usage_tracking 
-                                            (user_id, usage_date, routes_created, algorithm_runs) 
-                                            VALUES (%s, %s, %s, %s)
-                                            RETURNING id
-                                            """,
-                                            (user_id, today, 1, 0)
-                                        )
-                                        
-                                    result = cursor.fetchone()
-                                    conn.commit()
-                                    success = result is not None
-                            finally:
-                                conn.close()
-                        except Exception as e:
-                            print(f"Error recovering route creation via direct DB: {str(e)}")
-                
-                elif record_type == 'algorithm_run':
-                    # Try subscription manager
-                    try:
-                        subscription_manager = get_subscription_manager()
-                        success = subscription_manager.record_algorithm_run(user_id)
-                    except Exception as e:
-                        print(f"Error recovering algorithm run via subscription manager: {str(e)}")
+                    # Process each record
+                    processed_indices = []
                     
-                    # If failed, try direct DB
-                    if not success:
-                        try:
-                            conn = get_db_connection(use_service_role=True)
-                            try:
-                                with conn.cursor() as cursor:
-                                    today = datetime.now(timezone.utc).date()
-                                    
-                                    cursor.execute(
-                                        """
-                                        SELECT id, algorithm_runs FROM usage_tracking 
-                                        WHERE user_id = %s AND usage_date = %s
-                                        """, 
-                                        (user_id, today)
-                                    )
-                                    
-                                    existing = cursor.fetchone()
-                                    
-                                    if existing:
-                                        # Update existing record
-                                        current_count = existing['algorithm_runs'] or 0
-                                        cursor.execute(
-                                            """
-                                            UPDATE usage_tracking 
-                                            SET algorithm_runs = %s, updated_at = NOW()
-                                            WHERE id = %s
-                                            RETURNING id
-                                            """,
-                                            (current_count + 1, existing['id'])
-                                        )
-                                    else:
-                                        # Insert new record
-                                        cursor.execute(
-                                            """
-                                            INSERT INTO usage_tracking 
-                                            (user_id, usage_date, routes_created, algorithm_runs) 
-                                            VALUES (%s, %s, %s, %s)
-                                            RETURNING id
-                                            """,
-                                            (user_id, today, 0, 1)
-                                        )
-                                        
-                                    result = cursor.fetchone()
-                                    conn.commit()
-                                    success = result is not None
-                            finally:
-                                conn.close()
-                        except Exception as e:
-                            print(f"Error recovering algorithm run via direct DB: {str(e)}")
-                
-                if success:
-                    processed += 1
-                else:
-                    still_pending.append(record)
-            
-            # Update session with remaining records
-            if processed > 0:
-                print(f"Processed {processed} pending usage records, {len(still_pending)} still pending")
-                session['pending_usage_records'] = still_pending
-                session.modified = True
+                    for i, record in enumerate(pending_records):
+                        if record.get('user_id') != user_id:
+                            # Skip records for other users
+                            continue
+                            
+                        usage_type = record.get('type')
+                        if usage_type not in ['route_creation', 'algorithm_run']:
+                            # Skip records with invalid type
+                            continue
+                            
+                        # Try to process the record
+                        result = record_usage_with_service_role(user_id, usage_type)
+                        
+                        if result.get('success'):
+                            processed_indices.append(i)
+                    
+                    # Remove processed records from session
+                    new_pending = [record for i, record in enumerate(pending_records) if i not in processed_indices]
+                    session['pending_usage_records'] = new_pending
+                    session.modified = True
+            except Exception as e:
+                print(f"Error processing pending records: {str(e)}")
+                # Don't interrupt the request flow
 
 @app.route('/check_driver_limit', methods=['POST'])
 @login_required
@@ -2292,6 +2096,98 @@ def test_usage_tracking():
         results['service_role'] = {'success': False, 'error': str(e)}
     
     return jsonify(results)
+def get_service_client():
+    """Get a Supabase client using the service role key for admin access"""
+    supabase_url = os.getenv('SUPABASE_URL')
+    service_key = os.getenv('SUPABASE_SERVICE_KEY')
+    
+    if not supabase_url or not service_key:
+        print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
+        return None
+        
+    # Create client with service key (bypasses RLS)
+    service_client = create_client(supabase_url, service_key)
+    return service_client
+def record_usage_with_service_role(user_id, usage_type):
+    """
+    Record usage statistics using service role client to bypass RLS
+    
+    Args:
+        user_id: User ID string
+        usage_type: Either 'route_creation' or 'algorithm_run'
+    
+    Returns:
+        dict: Result of the operation
+    """
+    if not user_id:
+        return {'success': False, 'error': 'Missing user ID'}
+        
+    try:
+        # Get service client
+        service_client = get_service_client()
+        if not service_client:
+            return {'success': False, 'error': 'Could not create service client'}
+            
+        # Get today's date in ISO format
+        today = datetime.now(timezone.utc).date().isoformat()
+        
+        # First check if a record exists for today
+        response = service_client.table('usage_tracking').select('id, routes_created, algorithm_runs') \
+            .eq('user_id', user_id) \
+            .eq('usage_date', today) \
+            .execute()
+            
+        existing_record = None
+        if response and hasattr(response, 'data') and len(response.data) > 0:
+            existing_record = response.data[0]
+            
+        if existing_record:
+            # Update existing record
+            record_id = existing_record['id']
+            
+            if usage_type == 'route_creation':
+                current_count = existing_record.get('routes_created', 0) or 0
+                update_data = {'routes_created': current_count + 1}
+            else:  # algorithm_run
+                current_count = existing_record.get('algorithm_runs', 0) or 0
+                update_data = {'algorithm_runs': current_count + 1}
+                
+            # Add updated timestamp
+            update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+            
+            # Update the record
+            update_response = service_client.table('usage_tracking') \
+                .update(update_data) \
+                .eq('id', record_id) \
+                .execute()
+                
+            return {
+                'success': True, 
+                'method': 'service_update',
+                'record_id': record_id
+            }
+        else:
+            # Insert new record
+            insert_data = {
+                'user_id': user_id,
+                'usage_date': today,
+                'routes_created': 1 if usage_type == 'route_creation' else 0,
+                'algorithm_runs': 1 if usage_type == 'algorithm_run' else 0
+            }
+            
+            insert_response = service_client.table('usage_tracking') \
+                .insert(insert_data) \
+                .execute()
+                
+            return {
+                'success': True,
+                'method': 'service_insert',
+                'data': insert_response.data
+            }
+                
+    except Exception as e:
+        print(f"Error recording usage with service role: {str(e)}")
+        return {'success': False, 'error': str(e)}
 # Utility functions
 def run_solver(job_id, problem_data, params):
     """Run the CVRP solver in a separate thread"""

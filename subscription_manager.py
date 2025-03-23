@@ -4,6 +4,9 @@ import json
 from datetime import datetime, timezone
 from functools import wraps
 from flask import request, redirect, url_for, session, flash, current_app
+from db_connection import get_db_connection
+from db_connection import with_db_connection
+from supabase import create_client
 
 class LemonSqueezyClient:
     """Client for interacting with the Lemon Squeezy API"""
@@ -284,11 +287,11 @@ class SubscriptionManager:
     # Update this method in subscription_manager.py to ensure it always returns complete data
     def get_user_usage(self, user_id):
         """
-        Get usage statistics for a user with improved error handling
+        Get usage statistics for a user using service role client
         
         Args:
             user_id: The user ID
-                
+                    
         Returns:
             dict: Usage statistics including routes created this month
         """
@@ -297,24 +300,23 @@ class SubscriptionManager:
             return {'routes_created': 0, 'algorithm_runs': 0}
         
         try:
-            # Import here to avoid circular imports
-            from db_tracking import get_usage_tracker
+            # Import our service client utility
+            from service_client import get_usage_stats_with_service_role
             
-            # Get the usage tracker
-            tracker = get_usage_tracker()
+            # Get usage stats with service role
+            result = get_usage_stats_with_service_role(user_id)
             
-            # Use the tracker to get usage stats
-            result = tracker.get_usage_stats(user_id)
-            
-            # Return the stats
-            return {
-                'routes_created': result.get('routes_created', 0),
-                'algorithm_runs': result.get('algorithm_runs', 0)
-            }
-                
+            if result.get('success'):
+                return {
+                    'routes_created': result.get('routes_created', 0),
+                    'algorithm_runs': result.get('algorithm_runs', 0)
+                }
+                    
         except Exception as e:
-            print(f"Error getting user usage: {str(e)}")
-            return {'routes_created': 0, 'algorithm_runs': 0}
+            print(f"Error getting user usage with service client: {str(e)}")
+            
+        # Return default values if all methods fail
+        return {'routes_created': 0, 'algorithm_runs': 0}
 
     def get_user_limits(self, user_id):
         """
@@ -393,12 +395,9 @@ class SubscriptionManager:
         
         return has_routes_left, routes_created, max_routes
 
-    # Updated record_route_creation method for SubscriptionManager
-# Add this to your subscription_manager.py file, replacing the existing method
-
     def record_route_creation(self, user_id):
         """
-        Record a route creation using our enhanced tracking system
+        Record a route creation using service role client
         
         Args:
             user_id: The user ID
@@ -411,21 +410,30 @@ class SubscriptionManager:
             return False
         
         try:
-            # Import here to avoid circular imports
-            from db_tracking import get_usage_tracker
+            # Import our service client utility
+            from service_client import record_usage_with_service_role
             
-            # Get the usage tracker
-            tracker = get_usage_tracker()
-            
-            # Use the tracker to record the route creation
-            result = tracker.record_route_creation(user_id)
-            
-            # Return success status
+            # Record usage with service role
+            result = record_usage_with_service_role(user_id, 'route_creation')
             return result.get('success', False)
                 
         except Exception as e:
-            print(f"Error recording route usage: {str(e)}")
-            return False
+            print(f"Error recording route creation with service client: {str(e)}")
+            
+        # Try RPC as fallback
+        try:
+            # RPC calls should have SECURITY DEFINER to bypass RLS
+            response = self.supabase.rpc(
+                'record_route_usage',
+                {'p_user_id': user_id}
+            ).execute()
+            
+            if response and hasattr(response, 'data') and response.data is True:
+                return True
+        except Exception as e:
+            print(f"Error with RPC fallback: {str(e)}")
+            
+        return False
 
     def _ensure_usage_tracking_table_exists(self):
         """
@@ -482,7 +490,7 @@ class SubscriptionManager:
         return False
     def record_algorithm_run(self, user_id):
         """
-        Record an algorithm run using our enhanced tracking system
+        Record an algorithm run using service role client
         
         Args:
             user_id: The user ID
@@ -495,21 +503,30 @@ class SubscriptionManager:
             return False
         
         try:
-            # Import here to avoid circular imports
-            from db_tracking import get_usage_tracker
+            # Import our service client utility
+            from service_client import record_usage_with_service_role
             
-            # Get the usage tracker
-            tracker = get_usage_tracker()
-            
-            # Use the tracker to record the algorithm run
-            result = tracker.record_algorithm_run(user_id)
-            
-            # Return success status
+            # Record usage with service role
+            result = record_usage_with_service_role(user_id, 'algorithm_run')
             return result.get('success', False)
                 
         except Exception as e:
-            print(f"Error recording algorithm run: {str(e)}")
-            return False
+            print(f"Error recording algorithm run with service client: {str(e)}")
+            
+        # Try RPC as fallback
+        try:
+            # RPC calls should have SECURITY DEFINER to bypass RLS
+            response = self.supabase.rpc(
+                'record_algorithm_run',
+                {'p_user_id': user_id}
+            ).execute()
+            
+            if response and hasattr(response, 'data') and response.data is True:
+                return True
+        except Exception as e:
+            print(f"Error with RPC fallback: {str(e)}")
+            
+        return False
     def get_algorithm_credits(self, user_id):
         """
         Get the remaining algorithm credits for a user
@@ -521,38 +538,26 @@ class SubscriptionManager:
             dict: Contains credits_used and max_credits
         """
         if not user_id:
-            return {'credits_used': 0, 'max_credits': 0}
+            return {'credits_used': 0, 'max_credits': 0, 'credits_remaining': 0}
         
         # Get user's subscription limits
         limits = self.get_user_limits(user_id)
         max_credits = limits.get('max_algorithm_runs', 10)  # Default to 10 if not specified
         
         try:
-            # Get current month usage
-            current_date = datetime.now(timezone.utc)
-            current_month = current_date.month
-            current_year = current_date.year
+            # Use service client to get the accurate algorithm run count
+            from service_client import get_usage_stats_with_service_role
             
-            # Calculate first and last day of the month
-            first_day = f"{current_year}-{current_month:02d}-01"
+            # Get usage stats directly from database using service role
+            result = get_usage_stats_with_service_role(user_id)
             
-            # Calculate last day of the current month
-            if current_month == 12:
-                last_day = f"{current_year + 1}-01-01"
+            if result.get('success'):
+                credits_used = result.get('algorithm_runs', 0)
             else:
-                last_day = f"{current_year}-{current_month + 1:02d}-01"
-            
-            # Query the database for algorithm runs this month
-            response = self.supabase.table('usage_tracking')\
-                .select('algorithm_runs')\
-                .eq('user_id', user_id)\
-                .gte('usage_date', first_day)\
-                .lt('usage_date', last_day)\
-                .execute()
-            
-            # Sum up algorithm runs
-            credits_used = sum(item.get('algorithm_runs', 0) for item in response.data) if response.data else 0
-            
+                # Fallback to regular usage tracking if service client fails
+                user_usage = self.get_user_usage(user_id)
+                credits_used = user_usage.get('algorithm_runs', 0)
+                
             return {
                 'credits_used': credits_used,
                 'max_credits': max_credits,
@@ -560,7 +565,41 @@ class SubscriptionManager:
             }
         except Exception as e:
             print(f"Error getting algorithm credits: {str(e)}")
-            return {'credits_used': 0, 'max_credits': max_credits, 'credits_remaining': max_credits}
+            
+            # Fallback to direct database query using service role
+            try:
+                # Get service client
+                from service_client import get_service_client
+                service_client = get_service_client()
+                
+                if service_client:
+                    # Get current month's data
+                    from datetime import datetime, timezone
+                    today = datetime.now(timezone.utc)
+                    first_day = datetime(today.year, today.month, 1).date().isoformat()
+                    
+                    # Query for algorithm runs
+                    response = service_client.table('usage_tracking').select('algorithm_runs') \
+                        .eq('user_id', user_id) \
+                        .gte('usage_date', first_day) \
+                        .execute()
+                    
+                    # Sum up algorithm runs
+                    credits_used = 0
+                    if response and hasattr(response, 'data'):
+                        for record in response.data:
+                            credits_used += record.get('algorithm_runs', 0) or 0
+                    
+                    return {
+                        'credits_used': credits_used,
+                        'max_credits': max_credits,
+                        'credits_remaining': max(0, max_credits - credits_used)
+                    }
+            except Exception as ex:
+                print(f"Error with direct query fallback: {str(ex)}")
+        
+        # Return default values as last resort
+        return {'credits_used': 0, 'max_credits': max_credits, 'credits_remaining': max_credits}
 
     def _handle_subscription_created(self, payload):
         """Handle subscription_created webhook event with improved user ID extraction"""
