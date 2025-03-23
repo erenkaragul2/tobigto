@@ -293,6 +293,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard-refresh.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {  
     // Function to refresh usage stats via AJAX

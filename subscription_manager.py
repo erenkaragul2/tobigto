@@ -526,7 +526,93 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error with RPC fallback: {str(e)}")
             
+        # Last resort: direct insert using database connection
+        try:
+            from db_connection import get_db_connection
+            conn = get_db_connection(use_service_role=True)
+            
+            try:
+                with conn.cursor() as cursor:
+                    # Get current date
+                    from datetime import datetime, timezone
+                    today = datetime.now(timezone.utc).date()
+                    
+                    # Check if record exists for today
+                    cursor.execute(
+                        """
+                        SELECT id, algorithm_runs FROM usage_tracking
+                        WHERE user_id = %s AND usage_date = %s
+                        LIMIT 1
+                        """,
+                        (user_id, today)
+                    )
+                    
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        # Update existing record
+                        current_runs = existing['algorithm_runs'] or 0
+                        cursor.execute(
+                            """
+                            UPDATE usage_tracking
+                            SET algorithm_runs = %s, updated_at = %s
+                            WHERE id = %s
+                            """,
+                            (current_runs + 1, datetime.now(timezone.utc), existing['id'])
+                        )
+                    else:
+                        # Insert new record
+                        cursor.execute(
+                            """
+                            INSERT INTO usage_tracking
+                            (user_id, usage_date, routes_created, algorithm_runs)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (user_id, today, 0, 1)
+                        )
+                    
+                    conn.commit()
+                    return True
+                    
+            finally:
+                conn.close()
+                
+        except Exception as db_error:
+            print(f"Error with direct database fallback: {str(db_error)}")
+        
         return False
+    def get_usage_stats_detailed(self, user_id):
+        """Get detailed usage statistics including algorithm runs and route counts"""
+        if not user_id:
+            return {
+                'routes_created': 0,
+                'algorithm_runs': 0,
+                'max_routes': 5,
+                'is_trial': True
+            }
+        
+        # Get user usage for routes
+        usage = self.get_user_usage(user_id)
+        
+        # Get algorithm credits 
+        credits = self.get_algorithm_credits(user_id)
+        
+        # Get user limits
+        limits = self.get_user_limits(user_id)
+        
+        # Combine into a single response
+        result = {
+            'routes_created': usage.get('routes_created', 0),
+            'algorithm_runs': usage.get('algorithm_runs', 0) or credits.get('credits_used', 0),
+            'max_routes': limits.get('max_routes', 5),
+            'max_algorithm_runs': limits.get('max_algorithm_runs', 10),
+            'is_trial': limits.get('is_trial', True)
+        }
+        
+        # Add remaining credits
+        result['credits_remaining'] = max(0, result['max_algorithm_runs'] - result['algorithm_runs'])
+        
+        return result
     def get_algorithm_credits(self, user_id):
         """
         Get the remaining algorithm credits for a user

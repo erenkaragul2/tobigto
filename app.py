@@ -2190,7 +2190,7 @@ def record_usage_with_service_role(user_id, usage_type):
         return {'success': False, 'error': str(e)}
 # Utility functions
 def run_solver(job_id, problem_data, params):
-    """Run the CVRP solver in a separate thread"""
+    """Run the CVRP solver in a separate thread"""  
     try:
         # Update job status
         solver_jobs[job_id]['status'] = 'running'
@@ -2266,23 +2266,23 @@ def run_solver(job_id, problem_data, params):
             if solver_jobs[job_id].get('user_id'):
                 user_id = solver_jobs[job_id]['user_id']
                 
-                # Save the solution to the user's history in the database
-                # This is a placeholder - implement the actual database save
-                # solution_data = {
-                #     'user_id': user_id,
-                #     'timestamp': datetime.now().isoformat(),
-                #     'problem_size': len(problem_data['coordinates']),
-                #     'solution_cost': cost,
-                #     'solution_data': json.dumps({
-                #         'routes': routes,
-                #         'cost': cost,
-                #         'details': solution_details
-                #     })
-                # }
-                # supabase.table('solution_history').insert(solution_data).execute()
+                # Get subscription manager to record usage
+                subscription_manager = get_subscription_manager()
+                
+                # Record the algorithm run
+                algorithm_success = subscription_manager.record_algorithm_run(user_id)
+                
+                # Make sure route creation was recorded
+                route_success = subscription_manager.record_route_creation(user_id)
+                
+                print(f"Usage recording for job {job_id}: routes={route_success}, algorithm={algorithm_success}")
+                
+                # Optional: Save the solution to the user's history
+                # This could be implemented later
+                
                 print(f"Solution for job {job_id} saved to user {user_id} history")
         except Exception as e:
-            print(f"Error saving solution to history: {str(e)}")
+            print(f"Error recording usage or saving solution: {str(e)}")
         
     except Exception as e:
         # Update job status with error
