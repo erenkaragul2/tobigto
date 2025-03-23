@@ -46,6 +46,7 @@ ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SESSION_SECRET', 'cvrp-secret-key')  # Make sure to set a strong secret in production
@@ -2289,7 +2290,127 @@ def run_solver(job_id, problem_data, params):
         solver_jobs[job_id]['status'] = 'error'
         solver_jobs[job_id]['message'] = f"Error: {str(e)}"
         print(f"Solver error: {str(e)}")
+def enhance_vehicle_limit_validation(app):
+    """
+    Enhance the process_data and solve endpoints to enforce vehicle limits
+    based on the user's subscription
+    """
+    # Store original endpoints
+    original_process_data = app.view_functions.get('process_data')
+    original_solve = app.view_functions.get('solve')
+    
+    if original_process_data:
+        @app.route('/process_data', methods=['POST'])
+        def enhanced_process_data():
+            # Get user's max allowed drivers
+            max_drivers = get_user_max_drivers()
+            
+            # Get max_vehicles from request
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing request data'
+                }), 400
+                
+            max_vehicles = data.get('max_vehicles', 5)
+            
+            # Check if exceeds limit
+            if max_vehicles > max_drivers:
+                return jsonify({
+                    'success': False,
+                    'error': f'Your subscription plan allows a maximum of {max_drivers} drivers. You requested {max_vehicles}.',
+                    'limit_exceeded': True,
+                    'max_allowed': max_drivers
+                }), 403
+            
+            # Call original function
+            return original_process_data()
+    
+    if original_solve:
+        @app.route('/solve', methods=['POST'])
+        def enhanced_solve():
+            # Get user's max allowed drivers
+            max_drivers = get_user_max_drivers()
+            
+            # Get max_vehicles from request
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing request data'
+                }), 400
+                
+            max_vehicles = int(data.get('max_vehicles', 5))
+            
+            # Check if exceeds limit
+            if max_vehicles > max_drivers:
+                return jsonify({
+                    'success': False,
+                    'error': f'Your subscription plan allows a maximum of {max_drivers} drivers. You requested {max_vehicles}.',
+                    'limit_exceeded': True,
+                    'max_allowed': max_drivers
+                }), 403
+            
+            # Call original function
+            return original_solve()
+    
+    # Add endpoint to get max drivers
+    @app.route('/get_user_limits', methods=['GET'])
+    def get_user_limits_endpoint():
+        if 'user' not in session:
+            return jsonify({
+                'success': False,
+                'error': 'Not logged in'
+            }), 401
+        
+        # Get subscription manager
+        from subscription_manager import get_subscription_manager
+        subscription_manager = get_subscription_manager()
+        
+        # Get user limits
+        user_id = session['user']['id']
+        limits = subscription_manager.get_user_limits(user_id)
+        
+        # Get subscription details
+        subscription = subscription_manager.get_user_subscription(user_id)
+        
+        # Format response
+        response = {
+            'success': True,
+            'max_drivers': limits.get('max_drivers', 3),
+            'max_routes': limits.get('max_routes', 5),
+            'is_trial': limits.get('is_trial', True)
+        }
+        
+        # Add plan name if available
+        if subscription:
+            response['plan_name'] = subscription.get('plan_name', 'Unknown Plan')
+            response['plan_id'] = subscription.get('plan_id')
+        
+        return jsonify(response)
 
+def get_user_max_drivers():
+    """Get the maximum number of drivers for the current user"""
+    if 'user' not in session:
+        return 3  # Default for unauthenticated users
+    
+    user_id = session['user']['id']
+    
+    # Get from g if available
+    if hasattr(g, 'max_drivers'):
+        return g.max_drivers
+    
+    # Get from subscription manager
+    try:
+        from subscription_manager import get_subscription_manager
+        subscription_manager = get_subscription_manager()
+        max_drivers = subscription_manager.get_max_drivers(user_id)
+        g.max_drivers = max_drivers  # Cache for efficiency
+        return max_drivers
+    except Exception as e:
+        print(f"Error getting max drivers: {str(e)}")
+        return 3  # Safe default
 def parse_coordinates(coord_str):
     """Parse coordinate string into (lat, lng) tuple"""
     # Remove any whitespace
@@ -2310,6 +2431,6 @@ def parse_coordinates(coord_str):
     lng = float(parts[1])
     
     return lat, lng
-
+enhance_vehicle_limit_validation(app)
 if __name__ == '__main__':
     app.run()

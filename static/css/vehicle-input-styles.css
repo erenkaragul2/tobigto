@@ -1,0 +1,67 @@
+/* vehicle-input-styles.css */
+/* Add this to your static/css/ folder or include in your existing CSS file */
+
+.vehicle-input-container {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.vehicle-input-group {
+    margin-bottom: 5px;
+}
+
+.vehicle-limit-indicator {
+    padding: 5px 0;
+}
+
+/* Customize range slider appearance */
+.form-range::-webkit-slider-thumb {
+    background-color: #1a56db;
+}
+
+.form-range::-moz-range-thumb {
+    background-color: #1a56db;
+}
+
+.form-range::-ms-thumb {
+    background-color: #1a56db;
+}
+
+/* Style for the vehicle number input */
+#vehicleNumber {
+    text-align: center;
+    font-weight: bold;
+}
+
+/* Animated highlight when nearing limit */
+.vehicle-progress.bg-warning {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Style for the upgrade prompt */
+.vehicle-input-container .btn-outline-primary {
+    border-color: #1a56db;
+    color: #1a56db;
+    transition: all 0.3s ease;
+}
+
+.vehicle-input-container .btn-outline-primary:hover {
+    background-color: #1a56db;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
