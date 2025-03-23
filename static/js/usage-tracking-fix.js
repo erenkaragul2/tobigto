@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Original functions to record usage
     const originalRecordRouteUsage = window.recordRouteUsage;
-    const originalRecordAlgorithmRun = window.recordAlgorithmRun;
+    
     
     // Enhanced function to record route usage with better error handling and confirmation
     window.recordRouteUsage = function(force = false) {
@@ -63,59 +63,14 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     
     // Enhanced function to record algorithm run with better confirmation
-    window.recordAlgorithmRun = function(force = false) {
-        // Skip if already recorded unless forced
-        if (window.successfulOperations.algorithm && !force) {
-            console.log("Algorithm run already recorded for this session");
-            return Promise.resolve({ success: true, alreadyRecorded: true });
-        }
-        
-        // Call original function if it exists
-        if (typeof originalRecordAlgorithmRun === 'function') {
-            return originalRecordAlgorithmRun().then(result => {
-                if (result.success) {
-                    window.successfulOperations.algorithm = true;
-                    console.log("Algorithm run recorded successfully");
-                }
-                return result;
-            });
-        }
-        
-        // Fallback implementation
-        console.log("Recording algorithm run...");
-        return fetch('/record_algorithm_run', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({
-                client_side: true,
-                timestamp: new Date().toISOString()
-            }),
-            credentials: 'same-origin'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.successfulOperations.algorithm = true;
-                console.log("Algorithm run recorded successfully via fallback");
-            }
-            return data;
-        })
-        .catch(error => {
-            console.error("Error recording algorithm run:", error);
-            // Return a standardized error response
-            return { success: false, error: error.message };
-        });
-    };
+    
     
     // Enhanced function to record both operations at once
     window.recordSolverOperations = function(force = false) {
         console.log("Recording both route and algorithm operations...");
         return Promise.all([
             window.recordRouteUsage(force),
-            window.recordAlgorithmRun(force)
+            
         ]).then(results => {
             return {
                 success: results[0].success && results[1].success,

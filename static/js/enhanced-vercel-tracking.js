@@ -54,43 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     };
     
-    // Enhanced algorithm run recording
-    window.recordAlgorithmRun = function() {
-        console.log("Recording algorithm run with enhanced tracking...");
-        
-        // Use a unique ID for this tracking event
-        const trackingId = 'algorithm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-        
-        // Create tracking event
-        const trackingEvent = {
-            id: trackingId,
-            type: 'algorithm_run',
-            timestamp: new Date().toISOString(),
-            user_id: getUserId(),
-            attempts: 0,
-            max_attempts: 5,
-            status: 'pending'
-        };
-        
-        // Add to queue immediately
-        addToTrackingQueue(trackingEvent);
-        
-        // Process immediately
-        return processTrackingEvent(trackingEvent)
-            .then(result => {
-                console.log("Algorithm run recording result:", result);
-                return result;
-            })
-            .catch(error => {
-                console.error("Error recording algorithm run:", error);
-                // Still return a success response to not block the UI
-                return {
-                    success: true,
-                    warning: 'Will retry recording in background',
-                    id: trackingId
-                };
-            });
-    };
+    
     
     // Helper function to get the current user ID
     function getUserId() {
@@ -419,45 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e) e.preventDefault();
             
             // First record usage
-            Promise.all([window.recordRouteUsage(), window.recordAlgorithmRun()])
-                .then(() => {
-                    console.log("Usage tracking complete, proceeding with solve");
-                    
-                    // Call original handler
-                    if (typeof originalHandler === 'function') {
-                        originalHandler.call(this, e);
-                    } else {
-                        console.log("No original solve handler found, dispatching click event");
-                        // Dispatch a new event to trigger other handlers
-                        const clickEvent = new Event('click', {bubbles: true, cancelable: true});
-                        this.dispatchEvent(clickEvent);
-                    }
-                })
-                .catch(error => {
-                    console.error("Error in tracking:", error);
-                    
-                    // Check if this is a limit reached error
-                    if (error && error.limit_reached) {
-                        alert(error.error || "You have reached your usage limit. Please upgrade your plan.");
-                        
-                        // Redirect to pricing if provided
-                        if (error.redirect) {
-                            window.location.href = error.redirect;
-                        }
-                    } else {
-                        // For other errors, just proceed with solving
-                        console.log("Continuing with solve despite tracking error");
-                        
-                        if (typeof originalHandler === 'function') {
-                            originalHandler.call(this, e);
-                        } else {
-                            const clickEvent = new Event('click', {bubbles: true, cancelable: true});
-                            this.dispatchEvent(clickEvent);
-                        }
-                    }
-                });
-            
-            return false; // Prevent default and stop propagation
+            return false;
         };
     }
     

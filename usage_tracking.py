@@ -25,7 +25,7 @@ class UsageTracker:
         
         # Register routes for usage tracking
         app.route('/record_route_usage', methods=['POST'])(self.record_route_usage_endpoint)
-        app.route('/record_algorithm_run', methods=['POST'])(self.record_algorithm_run_endpoint)
+       
         app.route('/get_current_usage', methods=['GET'])(self.get_current_usage_endpoint)
         
         # Patch the solve endpoint to ensure usage tracking
@@ -98,42 +98,7 @@ class UsageTracker:
                 'error': str(e)
             }), 500
     
-    def record_algorithm_run_endpoint(self):
-        """Endpoint for recording algorithm run"""
-        if 'user' not in session:
-            return jsonify({'success': False, 'error': 'Not logged in'}), 401
-        
-        user_id = session['user']['id']
-        
-        try:
-            # Log the request for debugging
-            logger.info(f"Recording algorithm run for user {user_id}")
-            
-            # Record the usage
-            success = self.subscription_manager.record_algorithm_run(user_id)
-            
-            if success:
-                # Get updated usage
-                credits_info = self.subscription_manager.get_algorithm_credits(user_id)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Algorithm run recorded successfully',
-                    'credits_used': credits_info.get('credits_used', 0),
-                    'max_credits': credits_info.get('max_credits', 10)
-                })
-            else:
-                return jsonify({
-                    'success': False,
-                    'error': 'Failed to record algorithm run'
-                }), 500
-                
-        except Exception as e:
-            logger.error(f"Error recording algorithm run: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
+    
     
     def get_current_usage_endpoint(self):
         """Endpoint to get current usage statistics"""
@@ -249,7 +214,7 @@ def patch_run_solver(app):
                 subscription_manager.record_route_creation(user_id)
                 
                 # Record algorithm run
-                subscription_manager.record_algorithm_run(user_id)
+                
                 
                 app.logger.info(f"Usage recorded after successful solve for user {user_id}")
             
@@ -290,7 +255,6 @@ def fix_algorithm_recording():
         if record_route:
             result['route_success'] = self.record_route_creation(user_id)
             
-        if record_algorithm:
-            result['algorithm_success'] = self.record_algorithm_run(user_id)
+        
             
         return result

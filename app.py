@@ -1592,59 +1592,7 @@ def debug_usage_tracking():
         'pending_records': pending_records,
         'session_keys': list(session.keys())
     })
-@app.route('/record_algorithm_run', methods=['POST'])
-@login_required
-def record_algorithm_run_endpoint():
-    """Endpoint for recording algorithm run with service role client"""
-    try:
-        # Get user ID from session
-        user_id = session.get('user', {}).get('id')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': 'User not authenticated'
-            }), 401
-        
-        # Import the service client utility
-        from service_client import record_usage_with_service_role
-        
-        # Record usage with service role
-        result = record_usage_with_service_role(user_id, 'algorithm_run')
-        
-        if result['success']:
-            return jsonify({
-                'success': True,
-                'message': 'Algorithm run recorded successfully',
-                'method': result.get('method')
-            })
-        else:
-            # Fall back to session-based storage if service role fails
-            if 'pending_usage_records' not in session:
-                session['pending_usage_records'] = []
-                
-            session['pending_usage_records'].append({
-                'type': 'algorithm_run',
-                'user_id': user_id,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
-            session.modified = True
-            
-            return jsonify({
-                'success': True,
-                'warning': 'Service client failed, stored in session for later processing',
-                'error': result.get('error'),
-                'fallback': True
-            })
-            
-    except Exception as e:
-        import traceback
-        print(f"Error recording algorithm run: {str(e)}")
-        print(traceback.format_exc())
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+
 
 @app.route('/process_pending_records', methods=['POST'])
 @login_required
@@ -2271,7 +2219,7 @@ def run_solver(job_id, problem_data, params):
                 subscription_manager = get_subscription_manager()
                 
                 # Record the algorithm run
-                algorithm_success = subscription_manager.record_algorithm_run(user_id)
+                
                 
                 # Make sure route creation was recorded
                 route_success = subscription_manager.record_route_creation(user_id)

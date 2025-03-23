@@ -164,111 +164,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return window.pendingRecordingAttempt;
     };
     
-    // Function to record algorithm run with improved reliability
-    window.recordAlgorithmRun = function(retryCount = 0) {
-        // If already recorded in this session, don't record again
-        if (window.usageRecorded.algorithm) {
-            console.log("Algorithm run already recorded for this session");
-            return Promise.resolve({
-                success: true,
-                alreadyRecorded: true
-            });
-        }
-        
-        console.log("Recording algorithm run...");
-        
-        // Create a timestamp for debugging
-        const timestamp = new Date().toISOString();
-        const sessionId = Math.random().toString(36).substring(2, 15);
-        
-        // Prepare request with additional metadata for debugging
-        const requestData = {
-            client_side: true,
-            timestamp: timestamp,
-            browser: navigator.userAgent,
-            session_id: sessionId
-        };
-        
-        // Record the algorithm run
-        return fetch('/record_algorithm_run', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify(requestData),
-            credentials: 'same-origin'
-        })
-        .then(response => {
-            // Handle non-JSON responses
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                return { success: true, message: "Server returned non-JSON success response" };
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                console.log("Algorithm run recorded successfully:", data);
-                
-                // Mark as recorded for this session
-                window.usageRecorded.algorithm = true;
-                
-                // Update credits display if it exists
-                updateCreditsDisplay(data.credits_used, data.max_credits);
-                
-                return data;
-            } else if (data.limit_reached) {
-                // Handle limit reached
-                console.error("Algorithm run limit reached:", data);
-                handleAlgorithmLimitReached(data);
-                throw {
-                    limitReached: true,
-                    message: data.error || "Algorithm run limit reached",
-                    redirect: data.redirect
-                };
-            } else {
-                throw new Error(data.error || "Failed to record algorithm run");
-            }
-        })
-        .catch(error => {
-            console.error("Error recording algorithm run:", error);
-            
-            // Queue the failed attempt for recovery
-            queueTrackingAttempt('algorithm_run', requestData);
-            
-            // Retry with backoff if we haven't tried too many times
-            if (retryCount < 3 && !error.limitReached) {
-                console.log(`Retrying algorithm run recording (attempt ${retryCount + 1}/3)`);
-                
-                // Wait with exponential backoff and retry
-                const backoffTime = 1000 * Math.pow(2, retryCount);
-                
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => {
-                        window.recordAlgorithmRun(retryCount + 1)
-                            .then(resolve)
-                            .catch(reject);
-                    }, backoffTime);
-                });
-            }
-            
-            // If it's a limit reached error, propagate it
-            if (error.limitReached) {
-                throw error;
-            }
-            
-            // Return a standardized error response
-            return {
-                success: false,
-                error: error.message,
-                untracked: true
-            };
-        });
-    };
+    
     
     // Combined function to record both usage types before solving
     window.recordUsageBeforeSolving = function() {
@@ -281,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log("Route usage result:", routeResult);
                     
                     // Then record algorithm run
-                    return window.recordAlgorithmRun();
+                    
                 })
                 .then(algorithmResult => {
                     console.log("Algorithm run result:", algorithmResult);
@@ -432,7 +328,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (item.type === 'algorithm_run') {
             // Temporarily disable the "already recorded" check
             window.usageRecorded.algorithm = false;
-            processPromise = window.recordAlgorithmRun();
         } else {
             // Unknown type, skip
             processPromise = Promise.resolve({ success: false, error: `Unknown tracking type: ${item.type}` });
