@@ -18,15 +18,15 @@
 
 /* Customize range slider appearance */
 .form-range::-webkit-slider-thumb {
-    background-color: #1a56db;
+    background-color: #131313;
 }
 
 .form-range::-moz-range-thumb {
-    background-color: #1a56db;
+    background-color: #131313;
 }
 
 .form-range::-ms-thumb {
-    background-color: #1a56db;
+    background-color: #131313;
 }
 
 /* Style for the vehicle number input */
@@ -54,13 +54,13 @@
 
 /* Style for the upgrade prompt */
 .vehicle-input-container .btn-outline-primary {
-    border-color: #1a56db;
-    color: #1a56db;
+    border-color: #131313;
+    color: #131313;
     transition: all 0.3s ease;
 }
 
 .vehicle-input-container .btn-outline-primary:hover {
-    background-color: #1a56db;
+    background-color: #131313;
     color: white;
     transform: translateY(-2px);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);

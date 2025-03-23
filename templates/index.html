@@ -78,7 +78,9 @@
     .stop-item:last-child::after {
         display: none;
     }
-    
+    .navbar {
+        width: 100%;
+    }
     .depot-stop {
         background-color: #d9534f;
     }
@@ -143,7 +145,7 @@
                 <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
                     <div class="container">
                         <a class="navbar-brand" href="/">
-                            <img src="{{ url_for('static', filename='imgs/your-logo.png') }}" alt="RouteOptimize" height="20">
+                            <img src="{{ url_for('static', filename='imgs/your-logo-w.png') }}" alt="RouteOptimize" height="20">
                         </a>
                         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                             <span class="navbar-toggler-icon"></span>
@@ -237,7 +239,7 @@
                                             <label for="fileInput" class="form-label">Select file</label>
                                             <input class="form-control" type="file" id="fileInput" accept=".csv, .xlsx, .xls">
                                         </div>
-                                        <button id="uploadBtn" class="btn btn-primary">
+                                        <button id="uploadBtn" class="btn btn-black">
                                             <i class="fas fa-upload me-2"></i>Upload and Process
                                         </button>
                                     </div>
@@ -367,7 +369,7 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <button id="processDataBtn" class="btn btn-primary mt-3">
+                                        <button id="processDataBtn" class="btn btn-black mt-3">
                                             <i class="fas fa-sync me-2"></i>Process Data with These Settings
                                         </button>
                                         <!-- Add right after your "Process Data" button -->
@@ -501,7 +503,7 @@
                         <!-- Solution Overview Section -->
                         <div id="solutionContainer" class="mb-4"></div>
                         <div class="text-center my-4">
-                            <button id="generateReportBtn" class="btn btn-primary btn-lg">
+                            <button id="generateReportBtn" class="btn btn-black btn-lg">
                               <i class="fas fa-file-alt me-2"></i>Generate Route Report with Google Maps Links
                             </button>
                           </div>
@@ -596,31 +598,24 @@
             </div>
         </div>
     </div>
-
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    
     <!-- Google Maps API with callback -->
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6nI6OXtXeP7lJNrLpVs8G85RvR3GpQu4&libraries=geometry" async defer></script>
-    
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
-    
     <!-- Custom scripts -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
     <script src="{{ url_for('static', filename='js/matrix-fix.js') }}"></script>
-
     <script src="{{ url_for('static', filename='js/overview-display.js') }}"></script>
     <script src="{{ url_for('static', filename='js/enhanced-route-display.js') }}"></script>
-
     <!-- Our comprehensive fix that addresses both map and convergence plot issues -->
     <script src="{{ url_for('static', filename='js/comprehensive-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/vercel-upload-fix.js') }}"></script>
     <!-- Vercel compatibility fixes -->
     <script src="{{ url_for('static', filename='js/vercel-process-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/vercel-solve-fix.js') }}"></script>
-
     <!-- Enhanced Road Routing -->
     <script src="{{ url_for('static', filename='js/enhanced-vercel-tracking.js') }}"></script>
     <script src="{{ url_for('static', filename='js/usage-tracking-fix.js') }}"></script>
@@ -629,7 +624,5 @@
     <script src="{{ url_for('static', filename='js/vercel-tracking-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/plan-limits.js') }}"></script>
     <script src="{{ url_for('static', filename='js/enhanced-vehicle-input.js') }}"></script>
-
-
 </body>
 </html>

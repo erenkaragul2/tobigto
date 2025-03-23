@@ -9,13 +9,13 @@ body {
 }
 
 .btn-primary {
-    background-color: #1a56db;
-    border-color: #1a56db;
+    background-color: #131313;
+    border-color: #131313;
 }
 
 .btn-primary:hover {
-    background-color: #1348bd;
-    border-color: #1348bd;
+    background-color: #313131;
+    border-color: #313131;
 }
 
 .form-control {
@@ -24,15 +24,15 @@ body {
 }
 
 .text-primary {
-    color: #1a56db !important;
+    color: #131313 !important;
 }
 
 a {
-    color: #1a56db;
+    color: #131313;
     text-decoration: none;
 }
 
 a:hover {
-    color: #1348bd;
+    color: #131313;
     text-decoration: underline;
 }
