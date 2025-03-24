@@ -30,6 +30,9 @@ import traceback
 from datetime import datetime, timezone  # Fix the timezone import error
 from db_connection import get_db_connection  # Fix the get_db_connection error
 
+from report_storage import report_bp, init_reports_table
+
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -54,6 +57,14 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Session lasts 3
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'  # Only send cookies over HTTPS in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to cookies
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Restrict cookie to same site
+app.register_blueprint(report_bp)
+with app.app_context():
+    try:
+        # Initialize the reports table
+        init_reports_table()
+    except Exception as e:
+        # Log error but don't crash app
+        print(f"Error initializing reports table: {str(e)}")
 @app.before_request
 def make_session_permanent():
     session.permanent = True
@@ -358,11 +369,11 @@ def get_sample_data():
         'distanceMatrixPreview': preview
     })
 # Context processor to make subscription-related data available to templates
+# Context processor to make subscription-related data and report count available to templates
 @app.context_processor
 def inject_subscription_data():
     if 'user' in session:
         subscription_manager = get_subscription_manager()
-        subscription = subscription_manager.get_user_subscription(session['user']['id'])
         subscription = subscription_manager.get_user_subscription(session['user']['id'])
         
         default_limits = {
@@ -375,23 +386,46 @@ def inject_subscription_data():
             # Initialize with default limits
             subscription['limits'] = default_limits
             
-            
             plan_id = subscription.get('plan_id')
-        # Get plan features if subscription exists
-        if subscription:
-            plan_id = subscription.get('plan_id')
-            for plan_key, plan_info in subscription_manager.PLANS.items():
-                if plan_info['variant_id'] == plan_id:
-                    subscription['plan_name'] = plan_info['name']
-                    subscription['features'] = plan_info['features']
-                    subscription['limits'] = plan_info['limits']  # Add this line
-                    subscription['plan_key'] = plan_key          # Add this for reference
-                    break
+            # Get plan features if subscription exists
+            if subscription:
+                plan_id = subscription.get('plan_id')
+                for plan_key, plan_info in subscription_manager.PLANS.items():
+                    if plan_info['variant_id'] == plan_id:
+                        subscription['plan_name'] = plan_info['name']
+                        subscription['features'] = plan_info['features']
+                        subscription['limits'] = plan_info['limits']  # Add this line
+                        subscription['plan_key'] = plan_key          # Add this for reference
+                        break
+        
+        # Get report count using Supabase client
+        report_count = 0
+        try:
+            # Get user ID
+            user_id = session['user']['id']
             
+            # Get report count from Supabase
+            response = supabase.table('route_reports').select('count').eq('user_id', user_id).execute()
+            
+            # Check if we got a response with count
+            if hasattr(response, 'count') and response.count is not None:
+                report_count = response.count
+            # Fallback: If count isn't available, check data length
+            elif hasattr(response, 'data') and response.data:
+                if isinstance(response.data, list):
+                    report_count = len(response.data)
+                elif 'count' in response.data:
+                    report_count = response.data['count']
+                
+        except Exception as e:
+            print(f"Error getting report count from Supabase: {str(e)}")
+            # Default to 0 if there's an error
+            report_count = 0
+        
         return {
             'subscription': subscription,
             'plans': subscription_manager.PLANS,
-            
+            'report_count': report_count  # Make this available to templates
         }
     return {}
 # Public routes

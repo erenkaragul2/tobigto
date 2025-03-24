@@ -68,17 +68,23 @@
                     </div>
                 </div>
             </div>
-            <div class="row mt-4">
-                <div class="col-md-6">
-                    <div class="card h-100">
-                        <div class="card-body text-center">
-                            <div class="feature-icon">
-                                <i class="fas fa-truck"></i>
-                            </div>
-                            <h5 class="card-title">My Fleet</h5>
-                            <p class="card-text">Manage your vehicles and their capacities.</p>
-                            <a href="#" class="btn btn-black">Manage Fleet</a>
-                        </div>
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h4><i class="fas fa-file-pdf me-2"></i>My Reports</h4>
+                </div>
+                <div class="card-body">
+                    <p>View and manage your saved route optimization reports.</p>
+                    
+                    {% if report_count is defined and report_count > 0 %}
+                        <p>You have <strong>{{ report_count }}</strong> saved reports.</p>
+                    {% else %}
+                        <p>You haven't saved any reports yet. Generate a report after solving a route optimization.</p>
+                    {% endif %}
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                        <a href="{{ url_for('report.my_reports') }}" class="btn btn-primary">
+                            <i class="fas fa-file-pdf me-2"></i>View My Reports
+                        </a>
                     </div>
                 </div>
             </div>
