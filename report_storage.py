@@ -1,5 +1,4 @@
 # Enhanced report_storage.py for better error handling and debugging
-
 import base64
 import io
 import json
@@ -9,6 +8,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, session, send_file, render_template, g, abort, current_app, redirect, url_for, flash
 from auth_middleware import login_required
 from db_connection import with_db_connection, get_db_connection
+from sqlalchemy import desc  # Add this import for the 'desc' function
 
 # Create a blueprint for report storage routes
 report_bp = Blueprint('report', __name__)
@@ -205,7 +205,85 @@ def save_report():
         
         return jsonify(response_data), 500
 
-
+@report_bp.route('/delete_report/<report_id>', methods=['POST'])
+@login_required
+def delete_report(report_id):
+    """
+    Delete a saved report
+    """
+    try:
+        # Get user ID from session
+        user_id = session['user']['id']
+        
+        # First try with Supabase client
+        try:
+            from app import supabase
+            
+            # Check if report exists and belongs to user
+            response = supabase.table('route_reports').select('id').eq('id', report_id).eq('user_id', user_id).execute()
+            
+            if not hasattr(response, 'data') or not response.data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Report not found or you do not have permission to delete it'
+                }), 404
+            
+            # Delete the report
+            delete_response = supabase.table('route_reports').delete().eq('id', report_id).eq('user_id', user_id).execute()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Report deleted successfully'
+            })
+            
+        except Exception as e:
+            current_app.logger.error(f"Error deleting report with Supabase: {str(e)}")
+            
+            # Try with direct database connection
+            try:
+                conn = get_db_connection(use_service_role=True)
+                with conn.cursor() as cursor:
+                    # Check if report exists and belongs to user
+                    cursor.execute("""
+                        SELECT id FROM route_reports
+                        WHERE id = %s AND user_id = %s
+                    """, (report_id, user_id))
+                    
+                    result = cursor.fetchone()
+                    if not result:
+                        conn.close()
+                        return jsonify({
+                            'success': False,
+                            'error': 'Report not found or you do not have permission to delete it'
+                        }), 404
+                    
+                    # Delete the report
+                    cursor.execute("""
+                        DELETE FROM route_reports
+                        WHERE id = %s AND user_id = %s
+                    """, (report_id, user_id))
+                    
+                    conn.commit()
+                conn.close()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Report deleted successfully'
+                })
+                
+            except Exception as db_e:
+                current_app.logger.error(f"Error deleting report from database: {str(db_e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Database error: {str(db_e)}'
+                }), 500
+                
+    except Exception as e:
+        current_app.logger.error(f"Error in delete_report: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 @report_bp.route('/view_report/<report_id>', methods=['GET'])
 @login_required
 def view_report(report_id):
@@ -495,7 +573,51 @@ def init_rpc_functions():
     finally:
         if conn:
             conn.close()
-
+@report_bp.route('/my_reports')
+@login_required
+def my_reports():
+    """
+    View all saved reports for the current user
+    """
+    try:
+        # Get user ID from session
+        user_id = session['user']['id']
+        
+        # Get reports from database
+        reports = []
+        
+        # First try with Supabase client
+        try:
+            from app import supabase
+            response = supabase.table('route_reports').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
+            
+            if hasattr(response, 'data') and response.data:
+                reports = response.data
+        except Exception as e:
+            current_app.logger.error(f"Error getting reports from Supabase: {str(e)}")
+            
+            # Try with direct database connection
+            try:
+                conn = get_db_connection(use_service_role=True)
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT * FROM route_reports
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                    """, (user_id,))
+                    
+                    reports = cursor.fetchall()
+                conn.close()
+            except Exception as db_e:
+                current_app.logger.error(f"Error getting reports from database: {str(db_e)}")
+        
+        # Render template with reports
+        return render_template('my_reports.html', reports=reports)
+            
+    except Exception as e:
+        current_app.logger.error(f"Error in my_reports: {str(e)}")
+        flash(f"Error loading reports: {str(e)}", 'danger')
+        return redirect(url_for('dashboard'))
 
 # Enhanced initiation function that ensures everything is set up
 def init_reports_table():

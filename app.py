@@ -24,7 +24,7 @@ from trial_middleware import configure_trial_middleware
 from usage_limits import route_limit_required, driver_limit_check
 # Import the enhanced upload handler
 from upload_handler import enhanced_upload_handler
-from db_connection import with_db_connection
+from db_connection import with_db_connection, ensure_service_key_config
 import traceback
 
 from datetime import datetime, timezone  # Fix the timezone import error
@@ -57,7 +57,9 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Session lasts 3
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'  # Only send cookies over HTTPS in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to cookies
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Restrict cookie to same site
-app.register_blueprint(report_bp)
+app.register_blueprint(report_bp, url_prefix='/reports')
+if not ensure_service_key_config():
+    app.logger.warning("Service key configuration issues detected. Some database operations may fail.")
 with app.app_context():
     try:
         # Initialize the reports table
@@ -65,6 +67,18 @@ with app.app_context():
     except Exception as e:
         # Log error but don't crash app
         print(f"Error initializing reports table: {str(e)}")
+
+try:
+    from service_client import get_service_client
+    service_supabase = get_service_client()
+    if service_supabase:
+        app.logger.info("Service client initialized successfully")
+    else:
+        app.logger.warning("Failed to initialize service client")
+except Exception as e:
+    app.logger.error(f"Error initializing service client: {str(e)}")
+    service_supabase = None
+    
 @app.before_request
 def make_session_permanent():
     session.permanent = True
@@ -2541,7 +2555,7 @@ def enhance_vehicle_limit_validation(app):
             response['plan_id'] = subscription.get('plan_id')
         
         return jsonify(response)
-
+register_direct_report_endpoint(app)
 def get_user_max_drivers():
     """Get the maximum number of drivers for the current user"""
     if 'user' not in session:

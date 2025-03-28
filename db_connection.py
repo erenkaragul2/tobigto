@@ -30,7 +30,28 @@ else:
     DB_USER = os.environ.get('DB_USER', 'postgres')
     DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
     DB_PORT = os.environ.get('DB_PORT', '5432')
-
+def ensure_service_key_config():
+    """
+    Verify that the service key is properly configured and accessible
+    """
+    import os
+    
+    # Check for service key in environment variables (using multiple possible names)
+    service_key = os.environ.get('SUPABASE_SERVICE_KEY') or os.environ.get('SERVICE_KEY') or os.environ.get('DATABASE_SERVICE_KEY')
+    
+    if not service_key:
+        print("WARNING: No service key found in environment variables. Database operations requiring elevated privileges will fail.")
+        return False
+        
+    # Check for required Supabase URL
+    supabase_url = os.environ.get('SUPABASE_URL') or os.environ.get('DATABASE_URL')
+    
+    if not supabase_url:
+        print("WARNING: No Supabase URL found in environment variables.")
+        return False
+        
+    print("Service role configuration verified. Service key and Supabase URL are present.")
+    return True
 def get_db_connection(use_service_role=True):
     """Create database connection using service role credentials"""
     try:
