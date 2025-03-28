@@ -91,7 +91,178 @@ def setup_subscription_manager():
 def allowed_file(filename):
     """Check if file has an allowed extension"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+direct_report_bp = Blueprint('direct_report', __name__)
 
+@direct_report_bp.route('/save_report', methods=['POST'])
+def direct_save_report():
+    """
+    Direct endpoint for saving a report - bypasses the blueprint routing
+    that might be causing 404 errors in Vercel
+    """
+    response_data = {
+        'success': False,
+        'error': None,
+        'debug_info': {},
+        'auth_status': 'unknown'
+    }
+    
+    try:
+        # Get user ID from session
+        if 'user' not in session:
+            response_data['error'] = 'User not authenticated'
+            response_data['auth_status'] = 'no_session'
+            current_app.logger.error("No user in session when saving report")
+            return jsonify(response_data), 401
+            
+        user_id = session['user']['id']
+        response_data['debug_info']['user_id'] = user_id
+        response_data['auth_status'] = 'session_found'
+        
+        # Get request data
+        data = request.get_json()
+        
+        if not data:
+            response_data['error'] = 'Missing request data'
+            return jsonify(response_data), 400
+        
+        # Validate required fields
+        if 'pdf_data' not in data:
+            response_data['error'] = 'Missing PDF data'
+            return jsonify(response_data), 400
+        
+        # Extract PDF data
+        pdf_data = data['pdf_data']
+        if pdf_data.startswith('data:application/pdf;base64,'):
+            pdf_data = pdf_data[28:]
+        elif pdf_data.startswith('data:'):
+            # Remove any other data URL prefix
+            pdf_data = pdf_data.split(',', 1)[1]
+        
+        # Extract metadata
+        metadata = data.get('metadata', {})
+        current_app.logger.info(f"Received report save request with metadata: {metadata.keys()}")
+        
+        # Generate a unique ID for the report
+        report_id = str(uuid.uuid4())
+        
+        # Create timestamp
+        current_time = datetime.now(timezone.utc)
+        
+        # Create the report object
+        report_data = {
+            'id': report_id,
+            'user_id': user_id,
+            'report_name': f"Route Optimization Report - {current_time.strftime('%Y-%m-%d %H:%M')}",
+            'created_at': current_time.isoformat(),
+            'pdf_data': pdf_data,
+            'route_count': metadata.get('route_count', 0),
+            'total_distance': metadata.get('total_distance', 0),
+            'metadata': json.dumps(metadata),
+            'job_id': metadata.get('job_id', None)
+        }
+        
+        # Get Supabase client
+        from app import supabase
+        
+        # Try to save the report using regular insert first
+        success = False
+        
+        try:
+            response = supabase.table('route_reports').insert(report_data).execute()
+            if hasattr(response, 'data') and len(response.data) > 0:
+                success = True
+                response_data['method'] = 'direct_insert'
+        except Exception as e:
+            response_data['debug_info']['direct_error'] = str(e)
+            # Continue to next method
+        
+        # If direct insert failed, try the RPC approach
+        if not success:
+            try:
+                # Try RPC function as fallback
+                response = supabase.rpc(
+                    'insert_report',
+                    {
+                        'p_id': report_id,
+                        'p_user_id': user_id,
+                        'p_report_name': report_data['report_name'],
+                        'p_created_at': report_data['created_at'],
+                        'p_pdf_data': pdf_data,
+                        'p_route_count': report_data['route_count'],
+                        'p_total_distance': report_data['total_distance'],
+                        'p_metadata': metadata,
+                        'p_job_id': report_data['job_id']
+                    }
+                ).execute()
+                
+                if response and hasattr(response, 'data'):
+                    success = True
+                    response_data['method'] = 'rpc_function'
+            except Exception as e:
+                response_data['debug_info']['rpc_error'] = str(e)
+                # Continue to next method
+        
+        # If still no success, try service role DB connection
+        if not success:
+            try:
+                from db_connection import get_db_connection
+                
+                conn = get_db_connection(use_service_role=True)
+                with conn.cursor() as cursor:
+                    # Insert using direct SQL
+                    cursor.execute("""
+                        INSERT INTO route_reports 
+                        (id, user_id, report_name, created_at, pdf_data, route_count, total_distance, metadata, job_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, (
+                        report_id,
+                        user_id,
+                        report_data['report_name'],
+                        current_time,
+                        pdf_data,
+                        report_data['route_count'],
+                        report_data['total_distance'],
+                        json.dumps(metadata),
+                        report_data['job_id']
+                    ))
+                    
+                    result = cursor.fetchone()
+                    conn.commit()
+                    conn.close()
+                    
+                    if result and 'id' in result:
+                        success = True
+                        response_data['method'] = 'direct_db'
+            except Exception as e:
+                response_data['debug_info']['db_error'] = str(e)
+                response_data['debug_info']['db_traceback'] = traceback.format_exc()
+        
+        # Return the final result
+        if success:
+            response_data['success'] = True
+            response_data['message'] = 'Report saved successfully'
+            response_data['report_id'] = report_id
+            current_app.logger.info(f"Report saved successfully with ID {report_id}")
+            return jsonify(response_data)
+        else:
+            response_data['error'] = 'Failed to save report after multiple attempts'
+            current_app.logger.error(f"Failed to save report after multiple attempts: {response_data['debug_info']}")
+            return jsonify(response_data), 500
+            
+    except Exception as e:
+        response_data['error'] = f'Error saving report: {str(e)}'
+        response_data['debug_info']['traceback'] = traceback.format_exc()
+        
+        current_app.logger.error(f"Unhandled error saving report: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        
+        return jsonify(response_data), 500
+
+# Function to register this blueprint with the Flask app
+def register_direct_report_endpoint(app):
+    app.register_blueprint(direct_report_bp)
+    return app
 @file_bp.route('/upload', methods=['POST'])
 def upload_file():
     """

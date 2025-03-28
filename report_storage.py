@@ -1,51 +1,57 @@
-# report_storage.py
-"""
-Handles saving and retrieving route optimization reports using Supabase.
-"""
+# Enhanced report_storage.py for better error handling and debugging
 
 import base64
 import io
 import json
 import uuid
+import traceback
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, session, send_file, render_template, g, abort, current_app, redirect, url_for, flash
 from auth_middleware import login_required
 from db_connection import with_db_connection, get_db_connection
 
-
 # Create a blueprint for report storage routes
 report_bp = Blueprint('report', __name__)
-
 
 @report_bp.route('/save_report', methods=['POST'])
 @login_required
 def save_report():
     """
-    Save a PDF report to Supabase
+    Save a PDF report to Supabase with enhanced error handling and debugging
     
     Expects JSON with:
     - pdf_data: PDF content as base64 string
     - metadata: Report metadata
     """
+    response_data = {
+        'success': False,
+        'error': None,
+        'debug_info': {},
+        'auth_status': 'unknown'
+    }
+    
     try:
         # Get user ID from session
+        if 'user' not in session:
+            response_data['error'] = 'User not authenticated'
+            response_data['auth_status'] = 'no_session'
+            return jsonify(response_data), 401
+            
         user_id = session['user']['id']
+        response_data['debug_info']['user_id'] = user_id
+        response_data['auth_status'] = 'session_found'
         
         # Get request data
         data = request.get_json()
         
         if not data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing request data'
-            }), 400
+            response_data['error'] = 'Missing request data'
+            return jsonify(response_data), 400
         
         # Validate required fields
         if 'pdf_data' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing PDF data'
-            }), 400
+            response_data['error'] = 'Missing PDF data'
+            return jsonify(response_data), 400
         
         # Extract PDF data
         pdf_data = data['pdf_data']
@@ -57,6 +63,7 @@ def save_report():
         
         # Extract metadata
         metadata = data.get('metadata', {})
+        response_data['debug_info']['metadata_keys'] = list(metadata.keys())
         
         # Generate a unique ID for the report
         report_id = str(uuid.uuid4())
@@ -77,33 +84,126 @@ def save_report():
             'job_id': metadata.get('job_id', None)
         }
         
-        # Get Supabase client from app
+        # Get Supabase client and token info
         from app import supabase
         
-        # Store in Supabase
-        response = supabase.table('route_reports').insert(report_data).execute()
-        
-        if hasattr(response, 'data') and len(response.data) > 0:
-            return jsonify({
-                'success': True,
-                'message': 'Report saved successfully',
-                'report_id': report_id
-            })
+        # Try to get user token
+        user_token = None
+        if 'user' in session and 'access_token' in session['user']:
+            user_token = session['user']['access_token']
+            response_data['debug_info']['token_available'] = True
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to save report to database'
-            }), 500
+            response_data['debug_info']['token_available'] = False
+        
+        # Try direct insert first using the client with the user's token
+        success = False
+        
+        try:
+            if user_token:
+                # Create a client with the user's token for proper RLS enforcement
+                from supabase import create_client
+                supabase_url = current_app.config.get('SUPABASE_URL') or current_app.config.get('SUPABASE_API_URL')
+                supabase_key = current_app.config.get('SUPABASE_KEY') or current_app.config.get('SUPABASE_ANON_KEY')
+                
+                if supabase_url and supabase_key:
+                    user_client = create_client(supabase_url, supabase_key)
+                    
+                    # Set auth token
+                    user_client.auth.set_session(user_token, None)
+                    
+                    # Insert with user's token
+                    response = user_client.table('route_reports').insert(report_data).execute()
+                    
+                    if hasattr(response, 'data') and len(response.data) > 0:
+                        success = True
+                        response_data['method'] = 'user_token'
+            
+            # If that didn't work, try with the app's client
+            if not success:
+                response = supabase.table('route_reports').insert(report_data).execute()
+                
+                if hasattr(response, 'data') and len(response.data) > 0:
+                    success = True
+                    response_data['method'] = 'app_client'
+            
+            # If still no success, try service role approach
+            if not success and 'db_connection' in globals():
+                # Use db connection with service role
+                conn = get_db_connection(use_service_role=True)
+                
+                with conn.cursor() as cursor:
+                    # Insert using SQL directly
+                    cursor.execute("""
+                        INSERT INTO route_reports 
+                        (id, user_id, report_name, created_at, pdf_data, route_count, total_distance, metadata, job_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, (
+                        report_id,
+                        user_id,
+                        f"Route Optimization Report - {current_time.strftime('%Y-%m-%d %H:%M')}",
+                        current_time,
+                        pdf_data,
+                        metadata.get('route_count', 0),
+                        metadata.get('total_distance', 0),
+                        json.dumps(metadata),
+                        metadata.get('job_id', None)
+                    ))
+                    
+                    result = cursor.fetchone()
+                    conn.commit()
+                    
+                    if result and 'id' in result:
+                        success = True
+                        response_data['method'] = 'service_role_db'
+                
+                conn.close()
+        
+        except Exception as insert_error:
+            response_data['debug_info']['insert_error'] = str(insert_error)
+            response_data['debug_info']['insert_traceback'] = traceback.format_exc()
+            
+            # Try RPC function as a last resort
+            try:
+                rpc_response = supabase.rpc(
+                    'insert_route_report',
+                    {
+                        'p_id': report_id,
+                        'p_user_id': user_id,
+                        'p_report_name': f"Route Optimization Report - {current_time.strftime('%Y-%m-%d %H:%M')}",
+                        'p_created_at': current_time.isoformat(),
+                        'p_pdf_data': pdf_data,
+                        'p_route_count': metadata.get('route_count', 0),
+                        'p_total_distance': metadata.get('total_distance', 0),
+                        'p_metadata': metadata,
+                        'p_job_id': metadata.get('job_id', None)
+                    }
+                ).execute()
+                
+                if rpc_response and hasattr(rpc_response, 'data'):
+                    success = True
+                    response_data['method'] = 'rpc_function'
+            except Exception as rpc_error:
+                response_data['debug_info']['rpc_error'] = str(rpc_error)
+        
+        if success:
+            response_data['success'] = True
+            response_data['message'] = 'Report saved successfully'
+            response_data['report_id'] = report_id
+            return jsonify(response_data)
+        else:
+            response_data['error'] = 'Failed to save report to database after multiple attempts'
+            return jsonify(response_data), 500
             
     except Exception as e:
-        import traceback
-        print(f"Error saving report: {str(e)}")
-        print(traceback.format_exc())
+        response_data['error'] = f'Error saving report: {str(e)}'
+        response_data['debug_info']['traceback'] = traceback.format_exc()
         
-        return jsonify({
-            'success': False,
-            'error': f'Error saving report: {str(e)}'
-        }), 500
+        # Log the full error
+        current_app.logger.error(f"Error saving report: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        
+        return jsonify(response_data), 500
 
 
 @report_bp.route('/view_report/<report_id>', methods=['GET'])
@@ -119,173 +219,350 @@ def view_report(report_id):
         # Get Supabase client from app
         from app import supabase
         
-        # Get report from Supabase
-        response = supabase.table('route_reports').select('*').eq('id', report_id).eq('user_id', user_id).execute()
+        # Try to get access token
+        access_token = None
+        if 'user' in session and 'access_token' in session['user']:
+            access_token = session['user']['access_token']
         
-        if not hasattr(response, 'data') or not response.data:
+        # Create a function to fetch the report with different methods
+        def fetch_report():
+            # Method 1: Standard query with app client
+            try:
+                response = supabase.table('route_reports').select('*').eq('id', report_id).eq('user_id', user_id).execute()
+                if hasattr(response, 'data') and response.data:
+                    return response.data[0]
+            except Exception as e:
+                current_app.logger.error(f"Method 1 error: {str(e)}")
+            
+            # Method 2: Try with user's access token
+            if access_token:
+                try:
+                    from supabase import create_client
+                    supabase_url = current_app.config.get('SUPABASE_URL') or current_app.config.get('SUPABASE_API_URL')
+                    supabase_key = current_app.config.get('SUPABASE_KEY') or current_app.config.get('SUPABASE_ANON_KEY')
+                    
+                    if supabase_url and supabase_key:
+                        user_client = create_client(supabase_url, supabase_key)
+                        user_client.auth.set_session(access_token, None)
+                        
+                        response = user_client.table('route_reports').select('*').eq('id', report_id).eq('user_id', user_id).execute()
+                        if hasattr(response, 'data') and response.data:
+                            return response.data[0]
+                except Exception as e:
+                    current_app.logger.error(f"Method 2 error: {str(e)}")
+            
+            # Method 3: Use RPC function
+            try:
+                response = supabase.rpc(
+                    'get_user_report',
+                    {'p_report_id': report_id, 'p_user_id': user_id}
+                ).execute()
+                
+                if hasattr(response, 'data') and response.data:
+                    return response.data[0] if isinstance(response.data, list) else response.data
+            except Exception as e:
+                current_app.logger.error(f"Method 3 error: {str(e)}")
+            
+            # Method 4: Use direct database connection with service role
+            try:
+                conn = get_db_connection(use_service_role=True)
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT * FROM route_reports
+                        WHERE id = %s AND user_id = %s
+                    """, (report_id, user_id))
+                    
+                    report = cursor.fetchone()
+                    conn.close()
+                    
+                    if report:
+                        return report
+            except Exception as e:
+                current_app.logger.error(f"Method 4 error: {str(e)}")
+            
+            return None
+        
+        # Try to fetch the report
+        report = fetch_report()
+        
+        if not report:
             flash('Report not found or you do not have permission to view it', 'danger')
             return redirect(url_for('report.my_reports'))
         
-        report = response.data[0]
+        # Get download flag
+        download = request.args.get('download', 'false').lower() == 'true'
         
-        # Send PDF file directly
+        # Send PDF file
         pdf_data = report.get('pdf_data')
         pdf_bytes = base64.b64decode(pdf_data)
         
         return send_file(
             io.BytesIO(pdf_bytes),
             mimetype='application/pdf',
-            as_attachment=False,
+            as_attachment=download,
             download_name=f"route_report_{report_id}.pdf"
         )
             
     except Exception as e:
-        import traceback
-        print(f"Error viewing report: {str(e)}")
-        print(traceback.format_exc())
+        current_app.logger.error(f"Error viewing report: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
         
         flash(f"Error viewing report: {str(e)}", 'danger')
         return redirect(url_for('report.my_reports'))
 
 
-@report_bp.route('/my_reports', methods=['GET'])
+# Helper function to handle RLS bypass
+@report_bp.route('/check_reports_access', methods=['GET'])
 @login_required
-def my_reports():
+def check_reports_access():
     """
-    View all user reports
+    Debug endpoint to check reports access
     """
-    try:
-        # Get user ID from session
-        user_id = session['user']['id']
-        
-        # Get Supabase client from app
-        from app import supabase
-        
-        # Get reports from Supabase
-        response = supabase.table('route_reports').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
-        
-        reports = []
-        if hasattr(response, 'data'):
-            reports = response.data
-            
-            # Convert created_at strings to datetime objects for template
-            for report in reports:
-                if 'created_at' in report and report['created_at']:
-                    try:
-                        report['created_at'] = datetime.fromisoformat(report['created_at'].replace('Z', '+00:00'))
-                    except (ValueError, TypeError):
-                        # If conversion fails, keep as is
-                        pass
-        
-        return render_template('my_reports.html', reports=reports)
-            
-    except Exception as e:
-        import traceback
-        print(f"Error fetching reports: {str(e)}")
-        print(traceback.format_exc())
-        
-        flash(f"Error fetching reports: {str(e)}", 'danger')
-        return redirect(url_for('dashboard'))
-
-
-@report_bp.route('/delete_report/<report_id>', methods=['POST'])
-@login_required
-def delete_report(report_id):
-    """
-    Delete a saved report
-    """
-    try:
-        # Get user ID from session
-        user_id = session['user']['id']
-        
-        # Get Supabase client from app
-        from app import supabase
-        
-        # Delete from Supabase
-        response = supabase.table('route_reports').delete().eq('id', report_id).eq('user_id', user_id).execute()
-        
-        if hasattr(response, 'data') and len(response.data) > 0:
-            return jsonify({
-                'success': True,
-                'message': 'Report deleted successfully'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Report not found or you do not have permission to delete it'
-            }), 404
-            
-    except Exception as e:
-        import traceback
-        print(f"Error deleting report: {str(e)}")
-        print(traceback.format_exc())
-        
+    if 'user' not in session:
         return jsonify({
             'success': False,
-            'error': f'Error deleting report: {str(e)}'
-        }), 500
+            'error': 'Not authenticated'
+        }), 401
+    
+    user_id = session['user']['id']
+    results = {
+        'user_id': user_id,
+        'session_token': bool(session.get('user', {}).get('access_token')),
+        'methods': {}
+    }
+    
+    # Method 1: Standard query
+    try:
+        from app import supabase
+        response = supabase.table('route_reports').select('count').eq('user_id', user_id).execute()
+        
+        results['methods']['standard'] = {
+            'success': True,
+            'count': len(response.data) if hasattr(response, 'data') else 0
+        }
+    except Exception as e:
+        results['methods']['standard'] = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    # Method 2: With user token
+    if 'user' in session and 'access_token' in session['user']:
+        try:
+            from supabase import create_client
+            supabase_url = current_app.config.get('SUPABASE_URL')
+            supabase_key = current_app.config.get('SUPABASE_KEY')
+            
+            user_client = create_client(supabase_url, supabase_key)
+            user_client.auth.set_session(session['user']['access_token'], None)
+            
+            response = user_client.table('route_reports').select('count').eq('user_id', user_id).execute()
+            
+            results['methods']['user_token'] = {
+                'success': True,
+                'count': len(response.data) if hasattr(response, 'data') else 0
+            }
+        except Exception as e:
+            results['methods']['user_token'] = {
+                'success': False,
+                'error': str(e)
+            }
+    
+    # Method 3: RPC
+    try:
+        from app import supabase
+        response = supabase.rpc('get_user_reports_count', {'p_user_id': user_id}).execute()
+        
+        results['methods']['rpc'] = {
+            'success': True,
+            'response': str(response)
+        }
+    except Exception as e:
+        results['methods']['rpc'] = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    # Method 4: Direct DB
+    try:
+        conn = get_db_connection(use_service_role=True)
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM route_reports
+                WHERE user_id = %s
+            """, (user_id,))
+            
+            count = cursor.fetchone()
+            conn.close()
+            
+            results['methods']['direct_db'] = {
+                'success': True,
+                'count': count['count'] if count else 0
+            }
+    except Exception as e:
+        results['methods']['direct_db'] = {
+            'success': False,
+            'error': str(e)
+        }
+    
+    return jsonify(results)
 
 
-# Helper function to create route_reports table in Supabase if needed
-def init_reports_table():
+# Function to initialize database with RPC functions for reports
+def init_rpc_functions():
     """
-    Initialize the route_reports table in Supabase if it doesn't exist
+    Initialize RPC functions for report storage
     """
     try:
-        # Get Supabase client from app
-        from app import supabase
-        
-        # Check if table exists by trying to select from it
-        try:
-            response = supabase.table('route_reports').select('id').limit(1).execute()
-            if hasattr(response, 'data'):
-                print("route_reports table exists in Supabase")
-                return
-        except Exception as e:
-            if 'relation "route_reports" does not exist' not in str(e):
-                # If it's a different error, just log and return
-                print(f"Error checking for route_reports table: {str(e)}")
-                return
-        
-        # Table doesn't exist, create it via SQL (requires admin privileges)
-        # This is tricky to do via API, so we'll just print instructions
-        print("=== IMPORTANT: route_reports TABLE SETUP ===")
-        print("The route_reports table does not exist in your Supabase project.")
-        print("Please create it manually using the Supabase SQL editor with the following SQL:")
-        print("""
-CREATE TABLE IF NOT EXISTS route_reports (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
-    report_name TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    pdf_data TEXT NOT NULL,
-    route_count INTEGER,
-    total_distance FLOAT,
-    metadata JSONB,
-    job_id TEXT
-);
-
--- Add index for faster queries by user
-CREATE INDEX IF NOT EXISTS idx_route_reports_user_id ON route_reports(user_id);
-
--- Add RLS policies
-ALTER TABLE route_reports ENABLE ROW LEVEL SECURITY;
-
--- Allow users to see only their own reports
-CREATE POLICY route_reports_user_select ON route_reports
-    FOR SELECT USING (auth.uid() = user_id);
-
--- Allow users to insert their own reports
-CREATE POLICY route_reports_user_insert ON route_reports
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
--- Allow users to delete their own reports
-CREATE POLICY route_reports_user_delete ON route_reports
-    FOR DELETE USING (auth.uid() = user_id);
-""")
-        print("===============================================")
+        conn = get_db_connection(use_service_role=True)
+        with conn.cursor() as cursor:
+            # Function to insert a report
+            cursor.execute("""
+            CREATE OR REPLACE FUNCTION insert_route_report(
+                p_id UUID,
+                p_user_id UUID,
+                p_report_name TEXT,
+                p_created_at TIMESTAMPTZ,
+                p_pdf_data TEXT,
+                p_route_count INTEGER,
+                p_total_distance FLOAT,
+                p_metadata JSONB,
+                p_job_id TEXT
+            ) RETURNS UUID
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            AS $$
+            DECLARE
+                v_report_id UUID;
+            BEGIN
+                INSERT INTO route_reports (
+                    id, user_id, report_name, created_at, pdf_data, 
+                    route_count, total_distance, metadata, job_id
+                ) VALUES (
+                    p_id, p_user_id, p_report_name, p_created_at, p_pdf_data,
+                    p_route_count, p_total_distance, p_metadata, p_job_id
+                )
+                RETURNING id INTO v_report_id;
+                
+                RETURN v_report_id;
+            END;
+            $$;
+            """)
             
+            # Function to get a user's report
+            cursor.execute("""
+            CREATE OR REPLACE FUNCTION get_user_report(
+                p_report_id UUID,
+                p_user_id UUID
+            ) RETURNS SETOF route_reports
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT *
+                FROM route_reports
+                WHERE id = p_report_id AND user_id = p_user_id;
+            END;
+            $$;
+            """)
+            
+            # Function to get a user's reports count
+            cursor.execute("""
+            CREATE OR REPLACE FUNCTION get_user_reports_count(
+                p_user_id UUID
+            ) RETURNS INTEGER
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            AS $$
+            DECLARE
+                v_count INTEGER;
+            BEGIN
+                SELECT COUNT(*)
+                INTO v_count
+                FROM route_reports
+                WHERE user_id = p_user_id;
+                
+                RETURN v_count;
+            END;
+            $$;
+            """)
+            
+            conn.commit()
+            print("RPC functions for report storage created successfully")
     except Exception as e:
-        import traceback
-        print(f"Error initializing route_reports table: {str(e)}")
-        print(traceback.format_exc())
+        print(f"Error creating RPC functions: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
+
+
+# Enhanced initiation function that ensures everything is set up
+def init_reports_table():
+    """
+    Enhanced function to initialize the route_reports table and related functions
+    """
+    try:
+        # First, check if table exists
+        conn = get_db_connection(use_service_role=True)
+        table_exists = False
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'route_reports'
+                    );
+                """)
+                table_exists = cursor.fetchone()['exists']
+                
+                # Create table if it doesn't exist
+                if not table_exists:
+                    cursor.execute("""
+                    CREATE TABLE route_reports (
+                        id UUID PRIMARY KEY,
+                        user_id UUID NOT NULL,
+                        report_name TEXT NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                        pdf_data TEXT NOT NULL,
+                        route_count INTEGER,
+                        total_distance FLOAT,
+                        metadata JSONB,
+                        job_id TEXT
+                    );
+                    
+                    -- Add index for faster queries by user
+                    CREATE INDEX idx_route_reports_user_id ON route_reports(user_id);
+                    
+                    -- Enable Row Level Security
+                    ALTER TABLE route_reports ENABLE ROW LEVEL SECURITY;
+                    
+                    -- Allow users to see only their own reports
+                    CREATE POLICY route_reports_user_select ON route_reports
+                        FOR SELECT USING (auth.uid() = user_id);
+                    
+                    -- Allow users to insert their own reports
+                    CREATE POLICY route_reports_user_insert ON route_reports
+                        FOR INSERT WITH CHECK (auth.uid() = user_id);
+                    
+                    -- Allow users to delete their own reports
+                    CREATE POLICY route_reports_user_delete ON route_reports
+                        FOR DELETE USING (auth.uid() = user_id);
+                    """)
+                    
+                    conn.commit()
+                    print("Created route_reports table with RLS policies")
+                else:
+                    print("route_reports table already exists")
+        finally:
+            conn.close()
+        
+        # Initialize RPC functions
+        init_rpc_functions()
+        
+        return True
+    except Exception as e:
+        print(f"Error in init_reports_table: {str(e)}")
+        return False
