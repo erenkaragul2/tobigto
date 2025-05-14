@@ -854,6 +854,9 @@
             position: relative;
             z-index: 1;
             max-width: 600px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         /* Hero Image */
@@ -877,7 +880,7 @@
             width: 180px;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             position: absolute;
-            z-index: 10;  /* Added higher z-index to appear above the image */
+            z-index: 10;
         }
 
         .glassmorphism:hover {
@@ -1021,17 +1024,22 @@
                 <!-- Hero Content (Left Side) -->
                 <div class="hero-content animate-fadeIn">
                     <h1>
-                        <span class="hero-title-highlight">Intelligent Route</span> Optimization for Modern Businesses
+                        <!-- Current: -->
+                        <span class="hero-title-highlight">Intelligent Route</span>Cut Delivery Costs & Time with Smart Route Planning
+                        <!-- Suggestion 2 (Action Focus): Optimize Your Routes Intelligently, Boost Efficiency -->
+                        <!-- Suggestion 3 (Concise): AI-Powered Route Optimization for Peak Performance -->
                     </h1>
                     <p>
+                        <!-- Current & Recommended: -->
                         Save time, reduce costs, and improve customer satisfaction with our AI-powered route optimization platform. Perfect for delivery services, field technicians, and sales teams.
+                        <!-- Suggestion (Slightly more concise): Boost efficiency and cut costs with AI-powered route optimization. Ideal for delivery, field service, and sales teams. -->
                     </p>
                     <div class="hero-buttons">
-                        <a href="#" class="btn btn-primary btn-lg">
+                        <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">
                             <i class="fas fa-play btn-icon"></i>
                             Start Free Trial
                         </a>
-                        <a href="#" class="btn btn-outline btn-lg">
+                        <a href="#features" class="btn btn-outline btn-lg">
                             <i class="fas fa-video btn-icon"></i>
                             Watch Demo
                         </a>
@@ -1427,11 +1435,11 @@
                 Start your 14-day free trial today and see how RouteOptimize can transform your logistics operations.
             </p>
             <div class="hero-buttons">
-                <a href="#" class="btn btn-white btn-lg">
+                <a href="{{ url_for('signup') }}" class="btn btn-white btn-lg">
                     <i class="fas fa-play btn-icon"></i>
                     Start Free Trial
                 </a>
-                <a href="#" class="btn btn-outline-white btn-lg">
+                <a href="#" class="btn btn-outline-white btn-lg"> <!-- Assuming no specific demo page yet -->
                     <i class="fas fa-calendar btn-icon"></i>
                     Schedule a Demo
                 </a>
@@ -1468,8 +1476,8 @@
                 <div>
                     <h4 class="footer-heading">Product</h4>
                     <ul class="footer-links">
-                        <li><a href="#">Features</a></li>
-                        <li><a href="#">Pricing</a></li>
+                        <li><a href="#features">Features</a></li>
+                        <li><a href="#pricing">Pricing</a></li>
                         <li><a href="#">Customers</a></li>
                         <li><a href="#">Integrations</a></li>
                     </ul>

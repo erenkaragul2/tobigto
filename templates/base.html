@@ -68,34 +68,38 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+    <nav class="navbar navbar-expand-lg navbar-light app-header sticky-top"> {# Changed to navbar-light and added app-header #}
         <div class="container">
             <a class="navbar-brand" href="/">
-                <img src="{{ url_for('static', filename='imgs/your-logo-w.png') }}" alt="RouteOptimize" height="20">
+                {# Use the standard logo for light background #}
+                <img src="{{ url_for('static', filename='imgs/your-logo.png') }}" alt="RouteOptimize" height="30">
               </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('landing') }}">Home</a>
-                    </li>
                     {% if user %}
+                    {# Logged-in user navigation #}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('solver_app') }}">Route Solver</a>
                     </li>
+                     <li class="nav-item">
+                        {# Assuming report blueprint is named 'report' #}
+                        <a class="nav-link" href="{{ url_for('report.my_reports') }}">My Reports</a>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-user-circle me-1"></i> 
+                            <i class="fas fa-user-circle me-1"></i>
                             {% if user.email %}{{ user.email }}{% else %}Account{% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('profile') }}">Profile</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('subscription.pricing') }}">Subscription</a></li>
+                            {# Link to portal if exists, otherwise pricing #}
+                            <li><a class="dropdown-item" href="{{ url_for('subscription.portal') if 'subscription.portal' in config['URL_RULES'] else url_for('subscription.pricing') }}">Subscription</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
                         </ul>
@@ -108,7 +112,8 @@
                         <a class="nav-link" href="{{ url_for('login') }}">Login</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link btn btn-primary btn-sm text-white px-3 py-1 ms-2" href="{{ url_for('signup') }}">Sign Up</a>
+                        {# Apply consistent button styles from style.css #}
+                        <a class="nav-link btn btn-primary btn-sm px-3 py-1 ms-2" href="{{ url_for('signup') }}">Sign Up</a>
                     </li>
                     {% endif %}
                     <li class="nav-item">

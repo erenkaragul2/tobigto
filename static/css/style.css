@@ -1,3 +1,143 @@
+/* ======================================== */
+/* Styles imported from landing page for consistency */
+/* ======================================== */
+
+:root {
+    --primary: #2B2B2B; /* Using landing page primary */
+    --primary-light: #dadada;
+    --secondary: #6c7280;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --info: #3b82f6;
+    --light: #f9fafb;
+    --dark: #111827;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-900: #111827;
+    --border-radius: 0.5rem;
+    --bs-primary-rgb: 43, 43, 43; /* Match bootstrap variable if needed */
+    --bs-primary: var(--primary);
+}
+
+/* Consistent Header Style */
+.app-header {
+    background-color: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    padding: 1rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 1020; /* Ensure it's above other content, like Leaflet maps */
+}
+
+/* Override Bootstrap Navbar for light theme */
+.navbar-light.app-header {
+    background-color: #fff; /* Explicitly set white background */
+}
+
+.navbar-light.app-header .navbar-nav .nav-link {
+    color: var(--gray-500);
+    font-weight: 500;
+    transition: color 0.3s;
+    padding-left: 1rem; /* Add some spacing */
+    padding-right: 1rem;
+}
+
+.navbar-light.app-header .navbar-nav .nav-link:hover,
+.navbar-light.app-header .navbar-nav .nav-link:focus {
+    color: var(--primary);
+}
+
+.navbar-light.app-header .navbar-nav .nav-link.active {
+     color: var(--primary);
+     font-weight: 600; /* Make active link bolder */
+}
+
+/* Adjust dropdown menu for light header */
+.navbar-light.app-header .dropdown-menu {
+    border-radius: var(--border-radius);
+    border: 1px solid var(--gray-200);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.navbar-light.app-header .dropdown-item {
+    color: var(--gray-700);
+}
+
+.navbar-light.app-header .dropdown-item:hover,
+.navbar-light.app-header .dropdown-item:focus {
+    color: var(--primary);
+    background-color: var(--gray-100);
+}
+
+
+/* Consistent Button Styles (overriding Bootstrap where needed) */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none; /* Override Bootstrap default border */
+}
+
+.btn-primary {
+    background-color: var(--primary) !important; /* Use important to override BS */
+    color: white !important;
+    border-color: var(--primary) !important; /* Ensure border matches */
+}
+
+.btn-primary:hover {
+    background-color: #0f3c9e !important; /* Darker blue from landing */
+    border-color: #0f3c9e !important;
+    color: white !important;
+}
+
+.btn-outline { /* General outline style */
+    border: 1px solid var(--gray-300);
+    background-color: transparent;
+    color: var(--gray-700);
+}
+
+.btn-outline:hover {
+    background-color: var(--gray-100);
+    color: var(--gray-900); /* Darken text on hover */
+}
+
+/* Specific override for Bootstrap's btn-outline-light in the dark navbar context if needed */
+/* We are moving to a light navbar, so this might not be necessary anymore */
+/*
+.navbar-dark .btn-outline-light {
+     border-color: rgba(255, 255, 255, 0.5);
+}
+.navbar-dark .btn-outline-light:hover {
+     background-color: rgba(255, 255, 255, 0.1);
+     border-color: rgba(255, 255, 255, 0.7);
+}
+*/
+
+/* Ensure logo image height is consistent */
+.navbar-brand img {
+    height: 30px; /* Adjust as needed, landing used 60px but base used 20/30px */
+    transition: height 0.3s ease;
+}
+
+/* Add hover effect from landing page */
+.navbar-brand:hover img {
+    transform: scale(1.05);
+    transition: transform 0.3s ease;
+}
+
+/* ======================================== */
+/* End of imported styles                 */
+/* ======================================== */
 /* Custom styles for CVRP Solver */
 
 /* Data table */
